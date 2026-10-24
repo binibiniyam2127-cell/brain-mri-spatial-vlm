@@ -13,23 +13,7 @@ Features:
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
-
-import nibabel as nib
-import numpy as np
-from PIL import Image
-import plotly.graph_objects as go
-
-# Hugging Face ZeroGPU & Hardware Capability Integration
-try:
-    import torch
-
-    HAS_CUDA = torch.cuda.is_available()
-except ImportError:
-    HAS_CUDA = False
-
+# Hugging Face ZeroGPU Integration: Must be imported before torch or CUDA initialization!
 try:
     import spaces
 
@@ -46,6 +30,22 @@ except ImportError:
             return decorator
 
     spaces = _MockSpaces()
+
+import os
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+import nibabel as nib
+import numpy as np
+from PIL import Image
+import plotly.graph_objects as go
+
+try:
+    import torch
+
+    HAS_CUDA = torch.cuda.is_available()
+except ImportError:
+    HAS_CUDA = False
 
 import gradio as gr
 
