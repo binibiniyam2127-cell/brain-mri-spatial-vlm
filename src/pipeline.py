@@ -223,13 +223,18 @@ def run_full_pipeline(
 
         # Extract 3D volume for visualizations and spatial features
         if raw_arr.ndim == 4:
-            # 4D MSD format (H, W, D, 4) -> extract FLAIR at index 3
+            # Detect 4-channel orientation: BraTS standard supports (H, W, D, 4) or (4, H, W, D)
+            # Standard BraTS order: [0: T1, 1: T1c, 2: T2, 3: FLAIR] -> display FLAIR (index 3)
+            flair_idx = 3
             if raw_arr.shape[-1] >= 4:
-                vol_3d = raw_arr[:, :, :, 3].astype(np.float32)
+                vol_3d = raw_arr[:, :, :, flair_idx].astype(np.float32)
             elif raw_arr.shape[0] >= 4:
-                vol_3d = raw_arr[3, :, :, :].astype(np.float32)
+                vol_3d = raw_arr[flair_idx, :, :, :].astype(np.float32)
             else:
-                vol_3d = raw_arr[:, :, :, 0].astype(np.float32)
+                raise ValueError(
+                    f"4D MRI volume must contain 4 modality channels (T1, T1c, T2, FLAIR). "
+                    f"Found shape {raw_arr.shape} with insufficient channel dimensions."
+                )
 
             # Save preprocessed multi-sequence input in data/processed/ (never touch data/raw/)
             proc_fname = f"{case_id}_preprocessed_{ts}.nii.gz"
@@ -298,6 +303,12 @@ def run_full_pipeline(
     # -------------------------------------------------------------------------
     try:
         if mask_3d is not None and vol_3d is not None:
+            # Enforce spatial dimension consistency between volume and segmentation mask
+            if mask_3d.shape != vol_3d.shape:
+                raise ValueError(
+                    f"Spatial dimension mismatch between MRI volume {vol_3d.shape} and segmentation mask {mask_3d.shape}."
+                )
+
             zooms = None
             if ref_affine is not None:
                 # Estimate voxel spacing from affine column norms

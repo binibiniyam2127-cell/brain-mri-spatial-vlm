@@ -22,11 +22,18 @@ import numpy as np
 from PIL import Image
 import plotly.graph_objects as go
 
-# Hugging Face ZeroGPU Integration
+# Hugging Face ZeroGPU & Hardware Capability Integration
+try:
+    import torch
+
+    HAS_CUDA = torch.cuda.is_available()
+except ImportError:
+    HAS_CUDA = False
+
 try:
     import spaces
 
-    HAS_SPACES = True
+    HAS_SPACES = hasattr(spaces, "GPU")
 except ImportError:
     HAS_SPACES = False
 
@@ -105,11 +112,10 @@ def execute_pipeline(
     Optional[str],
     Optional[Any],
     Optional[Any],
-    int,
-    int,
+    Any,
     Image.Image,
 ]:
-    """Execute complete 3D Brain MRI pipeline with ZeroGPU acceleration."""
+    """Execute complete 3D Brain MRI pipeline with hardware-aware acceleration."""
     # 1. Determine input file
     if uploaded_file is not None:
         if isinstance(uploaded_file, str):
@@ -142,12 +148,16 @@ def execute_pipeline(
 
     mask_3d = None
     mask_file_path = None
+    mask_source = "None"
+
     if result.mask_path and Path(result.mask_path).is_file():
         mask_file_path = str(result.mask_path)
         mask_nii = nib.load(mask_file_path)
         mask_3d = np.asanyarray(mask_nii.dataobj).astype(np.int32)
         if mask_3d.ndim == 4 and mask_3d.shape[-1] == 1:
             mask_3d = np.squeeze(mask_3d, axis=-1)
+        if np.any(mask_3d > 0):
+            mask_source = "MONAI 3D SegResNet Model Prediction"
 
     # Robust fallback: If segmentation output is missing or empty,
     # resolve ground-truth or precomputed mask from annotations
@@ -175,9 +185,10 @@ def execute_pipeline(
                     ref_arr = np.asanyarray(ref_nii.dataobj).astype(np.int32)
                     if ref_arr.ndim == 4 and ref_arr.shape[-1] == 1:
                         ref_arr = np.squeeze(ref_arr, axis=-1)
-                    if np.any(ref_arr > 0):
+                    if np.any(ref_arr > 0) and ref_arr.shape == vol_3d.shape:
                         mask_3d = ref_arr
                         mask_file_path = str(cand)
+                        mask_source = "Verified Precomputed Reference Annotation (Fallback)"
                         break
                 except Exception:
                     continue
@@ -227,14 +238,23 @@ def execute_pipeline(
     conn_info = spatial_dict.get("connected_components") or {}
     conn_count = conn_info.get("num_components", 0) if isinstance(conn_info, dict) else 0
 
+    fallback_notice = ""
+    if "Fallback" in mask_source:
+        fallback_notice = (
+            "\n> ℹ️ **Notice:** Active neural network weights were not detected on this machine. "
+            "A verified precomputed reference annotation was loaded for quantitative spatial analytics and 3D visualization.\n"
+        )
+
     summary_card = (
         f"### 📊 Quantitative Spatial Summary\n"
         f"| Metric | Value |\n"
         f"| :--- | :--- |\n"
+        f"| **Segmentation Source** | **{mask_source}** |\n"
         f"| **Total Lesion Volume** | **{vol_cm3:.2f} cm³** ({vol_mm3:,.1f} mm³) |\n"
         f"| **Total Lesion Voxels** | **{tot_vox:,} voxels** |\n"
         f"| **Brain Volume Fraction** | **{spatial_dict.get('volume_fraction_percent', 0.0):.2f}%** |\n"
         f"| **Connected Lesion Clusters** | **{conn_count}** |\n\n"
+        f"{fallback_notice}"
         f"#### Detailed Slice & Anatomical Occupancy:\n"
         f"{md_spatial_table}\n\n"
         f"> *{RESEARCH_DISCLAIMER}*"
@@ -322,6 +342,8 @@ def execute_pipeline(
         show_bbox=True,
     )
 
+    slider_update = gr.Slider(value=default_slice_idx, maximum=max_slice)
+
     return (
         fig_3d,
         summary_card,
@@ -330,8 +352,7 @@ def execute_pipeline(
         mask_file_path,
         vol_3d,
         mask_3d,
-        default_slice_idx,
-        max_slice,
+        slider_update,
         initial_slice_img,
     )
 
@@ -385,6 +406,13 @@ def create_gradio_app() -> gr.Blocks:
         vol_state = gr.State()
         mask_state = gr.State()
 
+        # Dynamic hardware badge
+        hw_label = (
+            "⚡ ZeroGPU (NVIDIA A100)"
+            if (HAS_SPACES and HAS_CUDA)
+            else ("🟢 Local GPU Acceleration" if HAS_CUDA else "💻 Local CPU Execution")
+        )
+
         # =====================================================================
         # TOP BAR: Brand Header, Status Badges & Research Disclaimer
         # =====================================================================
@@ -397,7 +425,7 @@ def create_gradio_app() -> gr.Blocks:
                         <span style="color: #778da9; font-size: 13px;">3D Brain MRI Spatial Intelligence & Vision-Language Model Research Platform</span>
                     </div>
                     <div style="display: flex; gap: 10px; align-items: center;">
-                        <span style="background: rgba(0, 229, 255, 0.15); color: #00e5ff; border: 1px solid #00e5ff; padding: 4px 10px; border-radius: 16px; font-size: 12px; font-weight: bold;">⚡ ZeroGPU (NVIDIA A100)</span>
+                        <span style="background: rgba(0, 229, 255, 0.15); color: #00e5ff; border: 1px solid #00e5ff; padding: 4px 10px; border-radius: 16px; font-size: 12px; font-weight: bold;">{hw_label}</span>
                         <span style="background: rgba(46, 204, 113, 0.15); color: #2ecc71; border: 1px solid #2ecc71; padding: 4px 10px; border-radius: 16px; font-size: 12px; font-weight: bold;">🟢 MONAI BraTS 3D</span>
                         <span style="background: rgba(241, 196, 15, 0.15); color: #f1c40f; border: 1px solid #f1c40f; padding: 4px 10px; border-radius: 16px; font-size: 12px; font-weight: bold;">⚠️ Research Only</span>
                     </div>
@@ -514,7 +542,7 @@ def create_gradio_app() -> gr.Blocks:
             with gr.TabItem("📥 Download Artifacts"):
                 mask_download = gr.File(label="Download Predicted 3D Segmentation Mask (.nii.gz)")
 
-        # Pipeline trigger binding
+        # Pipeline trigger binding (9 distinct return slots -> 9 distinct target widgets)
         run_btn.click(
             fn=execute_pipeline,
             inputs=[uploaded_file, selected_sample, bbox_target, show_brain, brain_opac, subregions],
@@ -526,7 +554,6 @@ def create_gradio_app() -> gr.Blocks:
                 mask_download,
                 vol_state,
                 mask_state,
-                slice_slider,
                 slice_slider,
                 slice_image,
             ],

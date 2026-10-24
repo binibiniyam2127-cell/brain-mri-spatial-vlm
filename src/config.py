@@ -123,6 +123,29 @@ class ProjectConfig:
         """Allow dict-style get access."""
         return self.raw_dict.get(key, default)
 
+    def validate_runtime_environment(self) -> Dict[str, Any]:
+        """Validate device availability and gracefully fall back to CPU if needed.
+
+        Returns:
+            Dict[str, Any]: Status summary of runtime device and warnings.
+        """
+        report = {"status": "ok", "device": self.inference.device, "warnings": []}
+        try:
+            import torch
+
+            if self.inference.device.lower().startswith("cuda") and not torch.cuda.is_available():
+                report["warnings"].append(
+                    f"CUDA compute device requested ('{self.inference.device}'), but torch.cuda.is_available() is False. "
+                    "Gracefully falling back to CPU."
+                )
+                self.inference.device = "cpu"
+                report["device"] = "cpu"
+        except ImportError:
+            self.inference.device = "cpu"
+            report["device"] = "cpu"
+
+        return report
+
 
 def _parse_yaml_fallback(content: str) -> Dict[str, Any]:
     """Parse basic YAML structure when PyYAML is not installed.
@@ -325,7 +348,7 @@ def load_config(
         max_cases=int(sd_dict.get("max_cases", 25)),
     )
 
-    return ProjectConfig(
+    cfg = ProjectConfig(
         system=system_config,
         paths=paths_config,
         inference=inference_config,
@@ -334,4 +357,6 @@ def load_config(
         sample_data=sample_data_config,
         raw_dict=raw_dict,
     )
+    cfg.validate_runtime_environment()
+    return cfg
 
