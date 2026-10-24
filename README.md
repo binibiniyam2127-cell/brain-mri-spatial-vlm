@@ -1,273 +1,322 @@
-# BrainMRI-SpatialVLM: 3D Brain MRI Spatial Intelligence and Vision-Language Model System
+<div align="center">
 
-> **DISCLAIMER: AI-generated research draft — not a medical diagnosis.**  
-> This project is developed strictly for computational neuroscience, machine learning, and medical AI research demonstration purposes. It does not provide medical diagnoses, treatment advice, or clinical evaluations, and must **never** be used in clinical workflows, diagnostic interpretations, or patient care decisions.
+# 🧠 BrainMRI-SpatialVLM
+### 3D Brain MRI Spatial Intelligence & Vision-Language Model Research Platform
 
----
+[![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Live%20Demo-Hugging%20Face%20ZeroGPU-orange?style=for-the-badge&logo=huggingface)](https://huggingface.co/spaces/biniya/brain-mri-vlm)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![PyTorch 2.0+](https://img.shields.io/badge/PyTorch-2.0%2B-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white)](https://pytorch.org/)
+[![MONAI Core](https://img.shields.io/badge/MONAI-Medical%20Imaging-blueviolet?style=for-the-badge)](https://monai.io/)
+[![Gradio UI](https://img.shields.io/badge/Gradio-5.0-F97316?style=for-the-badge&logo=gradio&logoColor=white)](https://gradio.app/)
+[![ZeroGPU A100](https://img.shields.io/badge/Accelerated-NVIDIA%20A100-76B900?style=for-the-badge&logo=nvidia&logoColor=white)](https://huggingface.co/spaces/biniya/brain-mri-vlm)
+[![Tests Passing](https://img.shields.io/badge/Tests-79%20Passed-brightgreen?style=for-the-badge&logo=pytest)](https://github.com/binibiniyam2127-cell/brain-mri-spatial-vlm)
 
-## 1. System & Architecture Overview
+<p align="center">
+  <a href="https://huggingface.co/spaces/biniya/brain-mri-vlm">
+    <img src="https://img.shields.io/badge/🚀%20OPEN%20LIVE%20INTERACTIVE%20DEMO-00E5FF?style=for-the-badge&labelColor=0d1b2a" height="40" alt="Launch Demo"/>
+  </a>
+</p>
 
-**BrainMRI-SpatialVLM** is a research inference platform designed to integrate 3D Brain Magnetic Resonance Imaging (MRI) segmentation with spatial intelligence analysis and vision-language report generation. 
+> **Mandatory Research Disclaimer:**  
+> ⚠️ **AI-generated research draft — not a medical diagnosis.**  
+> Developed strictly for computational neuroscience, machine learning, and medical AI research demonstration. It does not provide medical diagnoses, treatment advice, or clinical evaluations, and must **never** be used in clinical workflows or patient care decisions.
 
-```
-                                  [ Input MRI Scan (.nii / .nii.gz) ]
-                                 (4 channels: T1, T1c, T2, FLAIR)
-                                                │
-                                                ▼
-                             [ Stage 1: Validation & Ingestion ]
-                                  (data/raw/ strictly read-only)
-                                                │
-                                                ▼
-                         [ Stage 2: Stacking & Preprocessing ]
-                                     (data/processed/)
-                                                │
-                                                ▼
-                   [ Stage 3: MONAI BraTS 3D Tumor Segmentation ]
-                                      (outputs/masks/)
-                                                │
-                                                ▼
-                 [ Stage 4: Quantitative Spatial Feature Extraction ]
-                        (outputs/reports/ — Physical volume,
-                         centroid, bounding box, connected components)
-                                                │
-                                                ▼
-                [ Stage 5: BrainGemma3D Vision-Language Draft Report ]
-                       (outputs/reports/ — MedSigLIP 3D + MedGemma
-                         AI-generated research draft findings)
-                                                │
-                                                ▼
-             [ Stage 6: Multi-Planar & Montage Visualizations ]
-                     (outputs/visualizations/ — Tri-planar,
-                      montage grid, slice occupancy profile)
-                                                │
-                                                ▼
-                      [ Stage 7: Unified Packaging & Interactive Web UI ]
-```
-
-### Core Architecture Components:
-1. **Multimodal MRI Ingestion**: Validates and normalizes 3D/4D NIfTI neuroimaging volumes. Original raw data in `data/raw/` is protected and preserved as read-only.
-2. **MONAI BraTS 3D Segmentation**: Utilizes the pretrained MONAI Model Zoo `brats_mri_segmentation` bundle (3D UNet) to segment brain tumor subregions:
-   - Label 1: Necrotic / Non-enhancing tumor core (NCR/NET)
-   - Label 2: Peritumoral edema (ED)
-   - Label 3: GD-enhancing tumor (ET)
-3. **Spatial Feature Extraction Engine**: Extracts non-diagnostic geometric and structural measurements:
-   - Total mask voxel count and physical volume in $\text{mm}^3$ (using NIfTI voxel spacing zooms)
-   - Brain volume fraction (%)
-   - 3D axis-aligned bounding box coordinates
-   - Centroid coordinates (both voxel index and scanner world coordinates)
-   - Axis extents along $X$, $Y$, and $Z$ axes (voxels and millimeters)
-   - Topological connected component count and multi-cluster analysis (`scipy.ndimage.label`)
-   - Slice-wise occupancy distributions across axial, coronal, and sagittal orientations
-   - Descriptive ground-truth reference mask comparisons (Dice coefficient and Jaccard index)
-4. **BrainGemma3D Vision-Language Reporting**: Couples an inflated 3D vision encoder (`google/medsiglip-448` with Conv2D $\rightarrow$ Conv3D center-frame expansion) and a 2-layer Perceiver token compressor with a 4-bit quantized language model (`google/medgemma-1.5-4b-it`) and fine-tuned LoRA adapters to produce research draft radiology findings and impressions.
-5. **Interactive Visualization & Web UI**: Renders multi-slice montages, orthogonal tri-planar views, and occupancy profiles with visible watermark banners, served through an interactive Gradio application (`app.py`).
+</div>
 
 ---
 
-## 2. Directory Structure & Data-Folder Organization
+## 🌟 Interactive Highlights
 
-The repository strictly separates raw source data, preprocessed inputs, models, and generated outputs:
+<table>
+  <tr>
+    <td width="50%">
+      <h3>🧊 3D WebGL Volumetric Surface Model</h3>
+      <ul>
+        <li><b>Full 360° Mouse Orbiting:</b> Left-click & drag to rotate through brain tissue.</li>
+        <li><b>Multi-Compartment Marching Cubes:</b>
+          <ul>
+            <li>🔴 <b>Necrotic Core (NCR):</b> Label 1 (<code style="color:#e53935">#e53935</code>)</li>
+            <li>🟢 <b>Peritumoral Edema (ED):</b> Label 2 (<code style="color:#43a047">#43a047</code>)</li>
+            <li>🟠 <b>Enhancing Tumor (ET):</b> Label 3 (<code style="color:#fb8c00">#fb8c00</code>)</li>
+          </ul>
+        </li>
+        <li><b>Scoped 3D Bounding Box:</b> Cyan wireframe (<code style="color:#00e5ff">#00e5ff</code>) shrinks dynamically around active subregions.</li>
+        <li><b>3D Centroid Marker:</b> Gold diamond (<code style="color:#ffd600">#ffd600</code>) highlighting pathological epicenter.</li>
+      </ul>
+    </td>
+    <td width="50%">
+      <h3>👁️ Multi-Planar 2D Slice Explorer (MPR)</h3>
+      <ul>
+        <li><b>Real-Time Scrubbing:</b> Smooth 0–154 slice slider along Z, Y, and X axes.</li>
+        <li><b>Tri-Planar Switching:</b> Instant toggling between <b>Axial</b>, <b>Coronal</b>, and <b>Sagittal</b>.</li>
+        <li><b>Smart Lesion Autofocus:</b> Automatically lands on the slice with maximum tumor burden.</li>
+        <li><b>Dynamic Alpha Compositing:</b> Contrast-normalized intensity with adjustable mask opacity (0.1–1.0).</li>
+      </ul>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <h3>📊 Quantitative Spatial Engine</h3>
+      <ul>
+        <li><b>Exact Physical Volumes:</b> $\text{cm}^3$ and $\text{mm}^3$ using NIfTI voxel spacing zooms ($dx \times dy \times dz$).</li>
+        <li><b>Intracranial Burden:</b> Volume fraction % of total brain compartment.</li>
+        <li><b>Topological Clustering:</b> Multi-lesion connected component analysis.</li>
+        <li><b>Scanner RAS Centroids:</b> World millimeter coordinates.</li>
+      </ul>
+    </td>
+    <td width="50%">
+      <h3>📝 AI Neuroradiology Draft Synthesizer</h3>
+      <ul>
+        <li><b>Structured Radiology Drafts:</b> Findings and Impressions formatted to clinical neuroradiology reporting conventions.</li>
+        <li><b>BrainGemma3D Multimodal VLM:</b> Integrates 3D inflated vision encoders (<a href="https://huggingface.co/google/medsiglip-448">MedSigLIP</a>) with 4-bit quantized <a href="https://huggingface.co/google/medgemma-1.5-4b-it">MedGemma</a>.</li>
+        <li><b>Strict Safety Guardrails:</b> Non-diagnostic disclaimer stamped on all drafts.</li>
+      </ul>
+    </td>
+  </tr>
+</table>
 
-```
-brain_mri_spatial_vlm/
-├── app.py                     # Modern interactive research web application (Gradio / ZeroGPU)
-├── configs/
-│   └── project_config.yaml    # Centralized configuration (paths, devices, models)
-├── data/
-│   ├── raw/                   # Original MRI files (strictly read-only)
-│   ├── processed/             # Inference-ready, stacked/preprocessed MRI volumes
-│   ├── annotations/           # Optional reference ground-truth segmentation masks
-│   └── downloads/             # Temporary dataset archive downloads (git-ignored)
-├── models/
-│   ├── monai_brats/           # MONAI BraTS bundle and model weights
-│   └── braingemma3d/          # BrainGemma3D repo, MedSigLIP, MedGemma, checkpoints
-├── notebooks/
-│   └── demo_walkthrough.ipynb # Step-by-step Jupyter demonstration notebook
-├── outputs/
-│   ├── masks/                 # Predicted 3D segmentation masks (.nii.gz)
-│   ├── reports/               # Spatial features JSON, draft reports (.md/.json), combined JSON
-│   └── visualizations/        # Tri-planar, montage, and occupancy PNG figures
-├── scripts/
-│   ├── download_sample_data.py   # Downloads 25 public MSD BraTS research cases
-│   ├── download_monai_brats.py   # Downloads MONAI BraTS segmentation bundle
-│   ├── download_braingemma3d.py  # Downloads BrainGemma3D, MedSigLIP, MedGemma
-│   ├── run_segmentation.py       # CLI runner for MONAI BraTS segmentation
-│   ├── run_report.py             # CLI runner for BrainGemma3D draft reporting
-│   ├── run_visualization.py      # CLI runner for multi-planar visualizer
-│   └── run_pipeline.py           # CLI runner for end-to-end multimodal pipeline
-├── src/
-│   ├── app_helpers.py         # UI business logic and 3D WebGL rendering helpers
-│   ├── config.py              # Configuration loader and validator
-│   ├── mri_io.py              # Robust NIfTI I/O and dimensional validation
-│   ├── pipeline.py            # End-to-end multimodal orchestration engine
-│   ├── reporting.py           # BrainGemma3D vision-language model adapter
-│   ├── segmentation.py        # MONAI BraTS segmentation adapter
-│   ├── spatial_features.py    # Quantitative spatial feature extraction engine
-│   ├── utils.py               # Path resolution, logging, and filename sanitization
-│   └── visualization.py       # MRI & mask visualization and watermark burning
-└── tests/                     # Comprehensive offline test suite (70+ unit/integration tests)
+---
+
+## 🏗️ End-to-End System Architecture
+
+```mermaid
+flowchart TD
+    subgraph INGESTION["1. Multimodal MRI Ingestion"]
+        A["4D NIfTI Scan (.nii.gz)<br/>T1, T1c, T2, FLAIR"] --> B["mri_io.py<br/>Shape & Affine Validation"]
+        B --> C["data/raw/ (Strictly Read-Only)"]
+        B --> D["data/processed/<br/>Preprocessed Multi-Channel Array"]
+    end
+
+    subgraph SEGMENTATION["2. MONAI BraTS 3D Inference"]
+        D --> E["segmentation.py<br/>MONAI SegResNet 3D"]
+        E --> F["outputs/masks/<br/>3D Multi-Region Mask"]
+    end
+
+    subgraph SPATIAL["3. Spatial Intelligence Engine"]
+        F --> G["spatial_features.py<br/>• Physical mm³ & cm³ Volume<br/>• Brain Fraction %<br/>• 3D Bounding Box<br/>• RAS Centroids & Components"]
+        G --> H["outputs/reports/<br/>Spatial Metrics JSON"]
+    end
+
+    subgraph REPORTING["4. Vision-Language Modeling"]
+        D & F & G --> I["reporting.py<br/>BrainGemma3D Adapter<br/>MedSigLIP + MedGemma"]
+        I --> J["outputs/reports/<br/>Neuroradiology Draft Report (MD/JSON)"]
+    end
+
+    subgraph VISUALIZATION["5. Interactive WebGL & 2D MPR"]
+        D & F & G --> K["app_helpers.py<br/>Marching Cubes WebGL Meshes"]
+        D & F --> L["visualization.py<br/>Tri-Planar Figures & Watermarks"]
+        K & L & J --> M["app.py<br/>Gradio ZeroGPU (NVIDIA A100) Dashboard"]
+    end
+
+    style INGESTION fill:#0d1b2a,stroke:#415a77,stroke-width:2px,color:#e0e1dd
+    style SEGMENTATION fill:#1b263b,stroke:#00e5ff,stroke-width:2px,color:#e0e1dd
+    style SPATIAL fill:#0d1b2a,stroke:#2ecc71,stroke-width:2px,color:#e0e1dd
+    style REPORTING fill:#1b263b,stroke:#f1c40f,stroke-width:2px,color:#e0e1dd
+    style VISUALIZATION fill:#0d1b2a,stroke:#e53935,stroke-width:2px,color:#e0e1dd
 ```
 
 ---
 
-## 3. Required MRI Input Format
+## ⚡ Quick Start
 
-The MONAI BraTS segmentation model expects four co-registered multimodal MRI sequences:
-- **T1**: T1-weighted native scan
-- **T1c / T1gd**: T1-weighted contrast-enhanced scan (gadolinium contrast)
-- **T2**: T2-weighted scan
-- **FLAIR**: Fluid Attenuated Inversion Recovery scan
-
-Inputs can be supplied as:
-- A single 4D NIfTI file (`.nii` or `.nii.gz`) with shape `(H, W, D, 4)` or `(4, H, W, D)` containing all 4 aligned sequences (such as the Medical Segmentation Decathlon Task01 BraTS dataset).
-- A directory or dictionary containing the individual aligned 3D sequence volumes.
+### Option 1: Live Cloud ZeroGPU (Instant — No Installation Required)
+Launch directly in your web browser with dedicated **NVIDIA A100 80GB GPU** acceleration:  
+👉 **[Open Live Hugging Face Space](https://huggingface.co/spaces/biniya/brain-mri-vlm)**
 
 ---
 
-## 4. Environment Setup & Installation
+### Option 2: Local Setup (Windows / Linux / macOS)
 
-### Prerequisites
-- Python 3.10 to 3.14 (64-bit)
-- NVIDIA CUDA GPU recommended for fast 3D deep learning and 4B parameter VLM inference (CPU fallback supported)
+<details open>
+<summary><b>Click to expand step-by-step local instructions</b></summary>
 
-### Installation (PowerShell on Windows)
 ```powershell
+# 1. Clone the repository
+git clone https://github.com/binibiniyam2127-cell/brain-mri-spatial-vlm.git
+cd brain-mri-spatial-vlm
+
+# 2. Create and activate a clean Python virtual environment
 python -m venv venv
-.\venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
+# On Windows:
+.\venv\Scripts\activate
+# On Linux/macOS:
+source venv/bin/activate
+
+# 3. Install core dependencies
 pip install -r requirements.txt
-```
 
----
-
-## 5. Model & Data Download Instructions
-
-### Step A: Download 25 Public Research MRI Cases
-Downloads the first 25 training cases from the Medical Segmentation Decathlon (MSD) Task01 BrainTumour dataset into `data/raw/` and reference masks into `data/annotations/`:
-```powershell
-python scripts/download_sample_data.py
-```
-CLI options:
-- `--max-cases 25`: Number of cases to extract.
-- `--output-dir data/raw/Task01_BrainTumour/imagesTr`: Destination for MRI scans.
-- `--annotations-dir data/annotations/Task01_BrainTumour/labelsTr`: Destination for reference masks.
-
-### Step B: Download MONAI BraTS Segmentation Bundle
-Downloads the official MONAI Model Zoo `brats_mri_segmentation` bundle into `models/monai_brats/`:
-```powershell
-python scripts/download_monai_brats.py
-```
-
-### Step C: Download BrainGemma3D, MedSigLIP, and MedGemma
-> [!IMPORTANT]
-> `google/medsiglip-448` and `google/medgemma-1.5-4b-it` are gated models on Hugging Face. You must have an active Hugging Face account and accept the applicable model licenses on their model pages prior to downloading.
-
-1. Log in to Hugging Face:
-   ```powershell
-   huggingface-cli login
-   ```
-2. Run the downloader utility:
-   ```powershell
-   python scripts/download_braingemma3d.py
-   ```
-   Optional checkpoint link argument:
-   ```powershell
-   python scripts/download_braingemma3d.py --checkpoint-dir /path/to/phase2b_final
-   ```
-
----
-
-## 6. Running the Research Web UI
-
-Launch the interactive web user interface:
-```powershell
+# 4. Launch the interactive platform!
 python app.py
 ```
 
-### UI Features:
-- **Case Selection**: Choose from 25 preloaded MSD BraTS cases or upload custom `.nii` / `.nii.gz` files.
-- **Reference Overlap**: Upload optional ground-truth masks to evaluate research overlap metrics (Dice / Jaccard).
-- **One-Click Pipeline**: Click **"Run Research Pipeline"** to run preprocessing, segmentation, spatial extraction, draft reporting, and visualization.
-- **🧊 Interactive 3D Volumetric Surface Mesh**:
-  - True 3D WebGL polygonal surface rendering powered by Marching Cubes and Plotly (`go.Mesh3d`).
-  - **Full 360° Mouse Orbiting & Rotation**: Left-click and drag to rotate the brain and tumor in full 3D space.
-  - **Interactive Zooming & Panning**: Scroll wheel to zoom in/out, right-click and drag to pan across structures.
-  - **Transparent Brain Shell & Tumor Subregion Controls**: Adjust brain contour opacity and toggle individual 3D subregions (Necrotic Core in red, Peritumoral Edema in green, Enhancing Tumor in orange).
-  - **Reference Mask Fallback**: Instantly visualizes ground-truth 3D reference masks even before downloading model weights.
-- **👁️ Interactive Multi-Planar 2D Slice Viewer (MPR)**:
-  - Seamlessly switch between Axial (Z), Coronal (Y), and Sagittal (X) planes.
-  - Automatically defaults slider to the anatomical slice with the peak predicted lesion surface area.
-  - Interactive multi-label color overlays with opacity controls.
-- **Spatial Metrics Table**: Formatted physical measurements labeled as:
-  `“Research-only spatial measurements — not clinical findings.”`
-- **Vision-Language Report Panel**: Displays draft radiology findings. If model weights are not installed, clearly displays:
-  `“BrainGemma3D model unavailable. No AI-generated report can be produced.”`
-- **One-Click Downloads**: Download predicted masks (`.nii.gz`), spatial metrics (`.json`), draft reports (`.md`), visualization figures (`.png`), and combined JSON results (`.json`).
+Open your browser at `http://127.0.0.1:7860` to access the full 3D interactive dashboard.
+
+</details>
 
 ---
 
-## 7. Command-Line Runners (CLI)
+## 📂 Repository Directory Layout
 
-### 1. End-to-End Multimodal Pipeline
-```powershell
-python scripts/run_pipeline.py --input data/raw/Task01_BrainTumour/imagesTr/BRATS_001.nii.gz --config configs/project_config.yaml --output-dir outputs
+```
+brain_mri_spatial_vlm/
+├── app.py                     # Main interactive Gradio ZeroGPU web application
+├── requirements.txt           # Production dependencies
+├── run_demo.bat               # Windows batch launcher (runs python app.py)
+├── run_demo.ps1               # PowerShell launcher (runs python app.py)
+├── README.md                  # Comprehensive architectural documentation
+├── .gitignore                 # Strict git exclusions (protects weights & raw scans)
+│
+├── configs/
+│   └── project_config.yaml    # Declarative pipeline, model & device configurations
+│
+├── data/
+│   ├── raw/                   # Benchmark 4D MSD BraTS NIfTI scans (strictly read-only)
+│   ├── annotations/           # Ground-truth multi-label reference masks (.nii.gz)
+│   ├── processed/             # Inference-ready multi-sequence arrays
+│   └── downloads/             # Archive extraction index
+│
+├── models/
+│   ├── monai_brats/           # Pretrained MONAI SegResNet 3D bundle (~36 MB)
+│   └── braingemma3d/          # BrainGemma3D VLM repo, MedSigLIP, MedGemma
+│
+├── src/                       # Production architectural framework
+│   ├── __init__.py            # Package root
+│   ├── config.py              # Strongly-typed dataclass configuration loader
+│   ├── mri_io.py              # Robust NIfTI 3D/4D I/O and affine validator
+│   ├── segmentation.py        # MONAI BraTS 3D segmentation inference adapter
+│   ├── spatial_features.py    # Quantitative physical volume & geometric engine
+│   ├── reporting.py           # BrainGemma3D neuroradiology draft report generator
+│   ├── visualization.py       # Tri-planar visualizer with research watermarks
+│   ├── app_helpers.py         # 3D Marching Cubes WebGL renderer & MPR compositing
+│   ├── pipeline.py            # End-to-end multimodal pipeline orchestrator
+│   └── utils.py               # Path resolution & safe timestamping
+│
+├── scripts/                   # Automated CLI execution runners
+│   ├── download_sample_data.py # Fetches 25 public MSD BraTS benchmark cases
+│   ├── download_monai_brats.py # Downloads MONAI segmentation bundle
+│   ├── download_braingemma3d.py # Resilient chunked BrainGemma3D downloader
+│   ├── run_pipeline.py        # Headless multimodal pipeline CLI
+│   ├── run_segmentation.py    # Standalone 3D segmentation runner
+│   ├── run_report.py          # Standalone draft report generator
+│   └── run_visualization.py   # Standalone tri-planar visualization generator
+│
+├── tests/                     # Comprehensive offline test suite (79 tests)
+│   ├── test_pipeline.py       # End-to-end integration tests
+│   ├── test_segmentation.py   # BraTS inference & channel stacking tests
+│   ├── test_spatial_features.py # Volume math, centroid & bounding box tests
+│   ├── test_app_helpers.py    # 3D WebGL mesh generation tests
+│   ├── test_reporting.py      # BrainGemma3D reporter & guardrail tests
+│   └── ...                    # (All 13 test modules pass 100% offline)
+│
+├── outputs/                   # Auto-generated artifacts (isolated by category)
+│   ├── masks/                 # 3D segmentation masks (.nii.gz)
+│   ├── reports/               # Quantitative JSON metrics & Markdown reports
+│   └── visualizations/        # High-res tri-planar and montage figures (.png)
+│
+└── hf_space_upload/           # Lightweight Hugging Face Spaces deployment package
 ```
 
-### 2. Standalone MONAI BraTS Segmentation
+---
+
+## 🧬 Subregion Color Mapping & Spatial Math
+
+<details>
+<summary><b>Click to expand segmentation definitions and voxel math formulas</b></summary>
+
+### BraTS Subregions Evaluated:
+| Label ID | Clinical Subregion | Visual Color | Hex Code | Opacity | Description |
+| :---: | :--- | :---: | :---: | :---: | :--- |
+| **Label 1** | **Necrotic Core (NCR)** | 🔴 Red | `#e53935` | 0.90 | Hypointense on T1, non-enhancing center of lesion |
+| **Label 2** | **Peritumoral Edema (ED)** | 🟢 Green | `#43a047` | 0.45 | Hyperintense vasogenic fluid infiltration on FLAIR |
+| **Label 3** | **Enhancing Tumor (ET)** | 🟠 Orange | `#fb8c00` | 0.85 | Hyperintense active rim on post-contrast T1c |
+
+### Mathematical Specifications:
+- **Physical Volume ($\text{mm}^3$):**  
+  $$V_{\text{subregion}} = N_{\text{voxels}} \times (dx \times dy \times dz)$$  
+  *(where $dx, dy, dz$ are voxel dimensions from NIfTI zooms)*
+- **Intracranial Volume Fraction (%):**  
+  $$\text{Fraction} = \frac{V_{\text{pathology}}}{V_{\text{brain}}} \times 100\%$$
+- **Scanner World Coordinates (RAS mm):**  
+  $$\mathbf{r}_{\text{world}} = \mathbf{A} \begin{bmatrix} \bar{x}_{\text{voxel}} \\ \bar{y}_{\text{voxel}} \\ \bar{z}_{\text{voxel}} \\ 1 \end{bmatrix}$$  
+  *(where $\mathbf{A}$ is the $4 \times 4$ affine transform matrix)*
+
+</details>
+
+---
+
+## 💻 Headless Command-Line Runners (CLI)
+
+<details>
+<summary><b>Click to expand CLI runner commands</b></summary>
+
+You can execute any stage of the pipeline headlessly without starting the UI:
+
 ```powershell
+# 1. Full Multimodal Pipeline
+python scripts/run_pipeline.py --input data/raw/Task01_BrainTumour/imagesTr/BRATS_001.nii.gz --output-dir outputs
+
+# 2. Standalone MONAI BraTS 3D Segmentation
 python scripts/run_segmentation.py --input data/raw/Task01_BrainTumour/imagesTr/BRATS_001.nii.gz --output-dir outputs/masks
-```
 
-### 3. Standalone BrainGemma3D Report Generator
-```powershell
+# 3. Standalone BrainGemma3D Draft Reporting
 python scripts/run_report.py --input data/raw/Task01_BrainTumour/imagesTr/BRATS_001.nii.gz --mask data/annotations/Task01_BrainTumour/labelsTr/BRATS_001.nii.gz --output-dir outputs/reports
-```
 
-### 4. Standalone Visualization Generator
-```powershell
+# 4. Standalone Multi-Planar Visualizer
 python scripts/run_visualization.py --input data/raw/Task01_BrainTumour/imagesTr/BRATS_001.nii.gz --mask data/annotations/Task01_BrainTumour/labelsTr/BRATS_001.nii.gz --output-dir outputs/visualizations
 ```
 
+</details>
+
 ---
 
-## 8. Running Tests
+## 🧪 Verification & Test Suite
 
-The test suite runs completely offline with mocked models and synthetic arrays, requiring zero model weight downloads:
+The test suite runs **100% offline** using synthetic arrays and mocked model architectures, ensuring zero weight download requirements:
+
 ```powershell
 python -m pytest tests/ -v
 ```
 
-Run specific test modules:
-```powershell
-python -m pytest tests/test_pipeline.py -v       # End-to-end pipeline integration
-python -m pytest tests/test_segmentation.py -v   # MONAI segmentation adapter
-python -m pytest tests/test_spatial_features.py -v # Spatial feature extraction
-python -m pytest tests/test_reporting.py -v      # BrainGemma3D reporter adapter
-python -m pytest tests/test_visualization.py -v  # Visualization and watermark tests
-python -m pytest tests/test_app_helpers.py -v    # UI helpers and 3D WebGL tests
+```text
+============================== 79 passed in 107.89s ==============================
+tests/test_app_helpers.py ........                         [ 10%] (3D WebGL & Marching Cubes)
+tests/test_config.py .......                               [ 18%] (Config Loader & Schema)
+tests/test_model_downloads.py ....                         [ 24%] (Download Resiliency)
+tests/test_mri_io.py ..........                            [ 36%] (NIfTI Dimensionality)
+tests/test_pipeline.py ....                                [ 41%] (Multimodal Integration)
+tests/test_project_structure.py ....                       [ 46%] (Data Protection Rules)
+tests/test_report_generator.py ...                         [ 50%] (Reporter Fallbacks)
+tests/test_reporting.py ......                             [ 58%] (BrainGemma3D Guardrails)
+tests/test_sample_data_script.py .....                     [ 64%] (Dataset Archives)
+tests/test_segmentation.py ......                          [ 72%] (MONAI BraTS 3D UNet)
+tests/test_spatial_features.py ........                    [ 82%] (Physical Volume Math)
+tests/test_utils.py .....                                  [ 88%] (Filesystem & Affine)
+tests/test_visualization.py .........                      [100%] (Tri-Planar Watermarks)
 ```
 
 ---
 
-## 9. Troubleshooting
+## 🛡️ Safety, Non-Diagnostic Guardrails & Ethics
 
-| Issue | Cause | Solution |
-| :--- | :--- | :--- |
-| `MissingChannelError` | Input scan does not contain all 4 required BraTS channels (T1, T1c, T2, FLAIR). | Provide a 4D NIfTI file containing all 4 modalities, or select one of the preloaded MSD BraTS cases from `data/raw/`. |
-| `BrainGemma3D model unavailable` | Weights or repository not yet downloaded into `models/braingemma3d/`. | This is expected behavior before weights are fetched. Run `python scripts/download_braingemma3d.py`. |
-| `HFValidationError` / 401 Unauthorized | Gated model licenses for `medsiglip-448` or `medgemma-1.5-4b-it` not accepted on Hugging Face. | Accept licenses on Hugging Face model pages, then authenticate with `huggingface-cli login` or set `HF_TOKEN`. |
-| `CUDA out of memory` | Insufficient GPU VRAM for 3D volumetric token processing. | Ensure you have $\ge 12\text{--}16\text{ GB}$ VRAM for 4-bit quantized execution, or configure `device: "cpu"` in `configs/project_config.yaml`. |
-| Matplotlib font warnings | Standard server headless environment missing specific desktop font files. | Harmless warning; the visualization engine automatically falls back to default system fonts. |
+- **Non-Diagnostic Policy:** This software is intended strictly as an AI research prototype. It does not provide medical diagnoses, clinical prognosis, or treatment recommendations.
+- **Mandatory Disclaimers:** All visualizations, draft reports, and interactive UI views carry the prominent watermark notice:  
+  `"AI-generated research draft — not a medical diagnosis."`
+- **Data Protection:** Original raw patient scans in `data/raw/` are strictly read-only and never modified during execution.
 
 ---
 
-## 10. Non-Diagnostic Research Guardrails
+## 📄 Citation & Acknowledgements
 
-> **Strict Non-Clinical Policy**:
-> - All spatial measurements are tagged: `"Research-only spatial measurements — not clinical findings."`
-> - All reference comparisons are tagged: `"This is a research measurement, not a diagnostic evaluation."`
-> - Every report, visualization figure, and JSON payload embeds the disclaimer:  
->   **“AI-generated research draft — not a medical diagnosis.”**
-> - The system strictly prohibits the fabrication of medical conclusions, clinical diagnoses, or therapeutic claims.
-#   b r a i n - m r i - s p a t i a l - v l m  
- 
+If you utilize this research platform in your work, please cite:
+
+```bibtex
+@software{brainmri_spatial_vlm_2026,
+  author = {Biniyam, et al.},
+  title = {BrainMRI-SpatialVLM: 3D Brain MRI Spatial Intelligence & Vision-Language Model Research Platform},
+  year = {2026},
+  publisher = {GitHub},
+  url = {https://github.com/binibiniyam2127-cell/brain-mri-spatial-vlm}
+}
+```
+
+*Built with [MONAI](https://monai.io/), [Hugging Face ZeroGPU](https://huggingface.co/spaces), [BrainGemma3D](https://huggingface.co/praiselab-picuslab/BrainGemma3D), [Plotly](https://plotly.com/), and [Gradio](https://gradio.app/).*
