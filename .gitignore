@@ -74,3 +74,6 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Temporary Space Deployment Clones
+temp_hf_space/
+
