@@ -1,0 +1,24 @@
+# Core Deep Learning & Medical Imaging Frameworks
+monai
+torch
+torchvision
+nibabel
+
+# Scientific & Numerical Computing
+numpy
+scipy
+scikit-image
+
+# Visualization & Gradio App
+plotly
+pillow
+gradio
+
+# Transformers & ZeroGPU VLM
+transformers
+accelerate
+huggingface_hub
+
+# Utilities
+pyyaml
+tqdm

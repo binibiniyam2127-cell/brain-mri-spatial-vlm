@@ -1,0 +1,76 @@
+# Preserve repository directory skeletons
+!*.gitkeep
+!.gitkeep
+
+# Python byte-code and caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/*
+
+# Medical Imaging Data (NIfTI files and archives)
+*.nii
+*.nii.gz
+*.tar
+*.tar.gz
+data/downloads/*
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+data/annotations/*
+!data/annotations/.gitkeep
+
+# Model weights, checkpoints, and downloaded artifacts
+*.pt
+*.pth
+*.bin
+*.onnx
+*.safetensors
+*.ckpt
+*.model
+tokenizer*.json
+vocab*.txt
+models/monai_brats/*
+!models/monai_brats/.gitkeep
+models/braingemma3d/*
+!models/braingemma3d/.gitkeep
+
+# Generated Outputs
+outputs/masks/*
+!outputs/masks/.gitkeep
+outputs/reports/*
+!outputs/reports/.gitkeep
+outputs/visualizations/*
+!outputs/visualizations/.gitkeep
+
+# Secrets and environment configurations
+.env
+.env.*
+*.env
+*.key
+*.pem
+credentials.json
+secrets.yaml
+
+# OS and IDE caches
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+

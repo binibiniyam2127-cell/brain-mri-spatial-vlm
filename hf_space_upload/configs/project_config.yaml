@@ -1,0 +1,71 @@
+# BrainMRI-SpatialVLM System Configuration
+# Research-only inference demonstration configuration file
+
+system:
+  name: "BrainMRI-SpatialVLM"
+  description: "3D Brain MRI Spatial Intelligence and Vision-Language Model System"
+  disclaimer: "AI-generated research draft — not a medical diagnosis."
+  mode: "inference"
+
+paths:
+  # Data directories
+  data_raw: "data/raw"
+  data_processed: "data/processed"
+  data_annotations: "data/annotations"
+
+  # Pretrained model directories
+  model_monai_brats: "models/monai_brats"
+  model_braingemma3d: "models/braingemma3d"
+
+  # Output directories
+  output_masks: "outputs/masks"
+  output_reports: "outputs/reports"
+  output_visualizations: "outputs/visualizations"
+
+inference:
+  device: "cuda"  # "cuda" (default when available) or "cpu" fallback
+  allowed_formats:
+    - ".nii"
+    - ".nii.gz"
+  required_modalities:
+    - "t1"
+    - "t1c"
+    - "t2"
+    - "flair"
+
+monai_brats:
+  bundle_dir: "models/monai_brats"
+  bundle_name: "brats_mri_segmentation"
+  download_url: "https://github.com/Project-MONAI/model-zoo/releases/download/hosting_storage_v1/brats_mri_segmentation_v0.4.5.zip"
+
+braingemma3d:
+  repo_dir: "models/braingemma3d/braingemma3d_repo"
+  siglip_dir: "models/braingemma3d/siglip"
+  medgemma_dir: "models/braingemma3d/medgemma"
+  checkpoint_dir: "models/braingemma3d/checkpoints/exp1/phase2b_final"
+  max_new_tokens: 384
+  require_gpu: true
+
+spatial_features:
+  measurement_label: "Research-only spatial measurements — not clinical findings."
+  disclaimer: "This is a research measurement, not a diagnostic evaluation."
+  compute_connected_components: true
+  compute_slice_occupancy: true
+
+visualization:
+  watermark: "AI-generated research visualization — not a medical diagnosis."
+  montage_slices: 12
+  montage_cols: 4
+  overlay_alpha: 0.55
+  dpi: 150
+
+pipeline:
+  save_processed_input: true
+  disclaimer: "AI-generated research draft — not a medical diagnosis."
+
+sample_data:
+  download_url: "https://msd-for-monai.s3-us-west-2.amazonaws.com/Task01_BrainTumour.tar"
+  raw_data_dir: "data/raw"
+  annotations_dir: "data/annotations"
+  downloads_dir: "data/downloads"
+  max_cases: 25
