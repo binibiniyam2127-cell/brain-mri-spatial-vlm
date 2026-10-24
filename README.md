@@ -269,3 +269,5 @@ python -m pytest tests/test_app_helpers.py -v    # UI helpers and 3D WebGL tests
 > - Every report, visualization figure, and JSON payload embeds the disclaimer:  
 >   **“AI-generated research draft — not a medical diagnosis.”**
 > - The system strictly prohibits the fabrication of medical conclusions, clinical diagnoses, or therapeutic claims.
+#   b r a i n - m r i - s p a t i a l - v l m  
+ 
