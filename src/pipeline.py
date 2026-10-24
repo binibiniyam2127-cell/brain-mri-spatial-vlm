@@ -84,6 +84,11 @@ class PipelineResult:
     stage_statuses: Dict[str, str] = field(default_factory=dict)
     errors: Dict[str, str] = field(default_factory=dict)
 
+    # In-memory arrays to prevent repeated file reading and reduce memory pressure
+    vol_3d: Optional[np.ndarray] = None
+    mask_3d: Optional[np.ndarray] = None
+    mask_source: str = "none"
+
     @property
     def paths(self) -> Dict[str, Any]:
         """Convenience dictionary mapping required artifact categories to file paths."""
@@ -199,6 +204,7 @@ def run_full_pipeline(
     processed_input_path: Optional[Path] = None
     mask_path: Optional[Path] = None
     mask_3d: Optional[np.ndarray] = None
+    mask_source: str = "none"
     vol_3d: Optional[np.ndarray] = None
     ref_affine: Optional[np.ndarray] = None
     spatial_features_path: Optional[Path] = None
@@ -217,9 +223,18 @@ def run_full_pipeline(
         raw_arr = np.asanyarray(nii.dataobj)
         ref_affine = np.array(nii.affine, dtype=np.float64)
 
+        # Early validation: Reject unsupported dimensions (< 3 or > 4)
+        if raw_arr.ndim < 3 or raw_arr.ndim > 4:
+            raise ValueError(
+                f"Unsupported MRI volume dimensionality: Expected 3D or 4D NIfTI, "
+                f"received {raw_arr.ndim}D array with shape {raw_arr.shape}."
+            )
+
         # Squeeze singleton dimension if present
         if raw_arr.ndim == 4 and raw_arr.shape[-1] == 1:
             raw_arr = np.squeeze(raw_arr, axis=-1)
+        elif raw_arr.ndim == 4 and raw_arr.shape[0] == 1:
+            raw_arr = np.squeeze(raw_arr, axis=0)
 
         # Extract 3D volume for visualizations and spatial features
         if raw_arr.ndim == 4:
@@ -289,6 +304,7 @@ def run_full_pipeline(
             mask_3d = np.squeeze(mask_3d, axis=-1)
 
         stage_statuses["segmentation"] = "completed"
+        mask_source = "MONAI 3D SegResNet Model Prediction"
 
     except Exception as e:
         stage_statuses["segmentation"] = "failed"
@@ -297,6 +313,7 @@ def run_full_pipeline(
         # Never fabricate missing results
         mask_path = None
         mask_3d = None
+        mask_source = "none"
 
     # -------------------------------------------------------------------------
     # Stage 3: Spatial Feature Extraction (outputs/reports/)
@@ -476,4 +493,7 @@ def run_full_pipeline(
         reference_comparison=ref_comparison,
         stage_statuses=stage_statuses,
         errors=errors,
+        vol_3d=vol_3d,
+        mask_3d=mask_3d,
+        mask_source=mask_source,
     )

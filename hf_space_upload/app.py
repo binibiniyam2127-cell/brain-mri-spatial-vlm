@@ -138,19 +138,18 @@ def execute_pipeline(
         output_dir=PROJECT_ROOT / "outputs",
     )
 
-    # 3. Load 3D volume & mask
-    mri_nii = nib.load(str(input_path))
-    mri_vol = np.asanyarray(mri_nii.dataobj).astype(np.float32)
-    if mri_vol.ndim == 4:
-        vol_3d = mri_vol[..., 0]
-    else:
-        vol_3d = mri_vol
+    # 3. Resolve 3D volume & mask (reuse pipeline in-memory array to eliminate redundant disk reload)
+    vol_3d = result.vol_3d
+    if vol_3d is None:
+        mri_nii = nib.load(str(input_path))
+        mri_vol = np.asanyarray(mri_nii.dataobj).astype(np.float32)
+        vol_3d = mri_vol[..., 0] if mri_vol.ndim == 4 else mri_vol
 
-    mask_3d = None
-    mask_file_path = None
-    mask_source = "None"
+    mask_3d = result.mask_3d
+    mask_file_path = str(result.mask_path) if result.mask_path else None
+    mask_source = result.mask_source if result.mask_source != "none" else "None"
 
-    if result.mask_path and Path(result.mask_path).is_file():
+    if mask_3d is None and result.mask_path and Path(result.mask_path).is_file():
         mask_file_path = str(result.mask_path)
         mask_nii = nib.load(mask_file_path)
         mask_3d = np.asanyarray(mask_nii.dataobj).astype(np.int32)
