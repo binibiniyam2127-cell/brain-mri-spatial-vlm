@@ -26,7 +26,9 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 import sys
+import time
 from typing import Any, Dict, List, Optional, Tuple, Union
+import uuid
 
 import nibabel as nib
 import numpy as np
@@ -47,7 +49,16 @@ from src.spatial_features import (
     extract_spatial_features,
     save_spatial_features,
 )
-from src.utils import ensure_directory, get_project_root, is_nifti_file, safe_filename, timestamped_filename
+from src.utils import (
+    compute_file_sha256,
+    ensure_directory,
+    get_git_commit_sha,
+    get_pipeline_logger,
+    get_project_root,
+    is_nifti_file,
+    safe_filename,
+    timestamped_filename,
+)
 from src.visualization import (
     VISUALIZATION_WATERMARK,
     generate_all_visualizations,
@@ -74,15 +85,19 @@ class PipelineResult:
     draft_report_md_path: Optional[Path] = None
     visualization_paths: Dict[str, Path] = field(default_factory=dict)
     combined_json_path: Optional[Path] = None
+    provenance_path: Optional[Path] = None
 
     # Structured data payloads
     spatial_features: Dict[str, Any] = field(default_factory=dict)
     report_data: Dict[str, Any] = field(default_factory=dict)
     reference_comparison: Optional[Dict[str, Any]] = None
+    provenance_data: Dict[str, Any] = field(default_factory=dict)
 
-    # Stage tracking and error reporting
+    # Stage tracking, latency, and error reporting
     stage_statuses: Dict[str, str] = field(default_factory=dict)
     errors: Dict[str, str] = field(default_factory=dict)
+    stage_latencies_ms: Dict[str, float] = field(default_factory=dict)
+    run_id: str = ""
 
     # In-memory arrays to prevent repeated file reading and reduce memory pressure
     vol_3d: Optional[np.ndarray] = None
@@ -100,6 +115,7 @@ class PipelineResult:
             "visualizations": self.visualization_paths,
             "combined_json": self.combined_json_path,
             "processed_input": self.processed_input_path,
+            "provenance": self.provenance_path,
         }
 
     def __getitem__(self, key: str) -> Any:
@@ -113,11 +129,13 @@ class PipelineResult:
     def to_dict(self) -> Dict[str, Any]:
         """Convert pipeline result into JSON-serializable dictionary."""
         return {
+            "run_id": self.run_id,
             "case_id": self.case_id,
             "timestamp_utc": self.timestamp_utc,
             "status": self.status,
             "disclaimer": self.disclaimer,
             "stage_statuses": self.stage_statuses,
+            "stage_latencies_ms": self.stage_latencies_ms,
             "errors": self.errors,
             "paths": {
                 "mask": str(self.mask_path) if self.mask_path else None,
@@ -127,10 +145,12 @@ class PipelineResult:
                 "draft_report_md": str(self.draft_report_md_path) if self.draft_report_md_path else None,
                 "visualizations": {k: str(v) for k, v in self.visualization_paths.items()},
                 "combined_json": str(self.combined_json_path) if self.combined_json_path else None,
+                "provenance": str(self.provenance_path) if self.provenance_path else None,
             },
             "spatial_features": self.spatial_features,
             "reference_comparison": self.reference_comparison,
             "report_data": self.report_data,
+            "provenance_data": self.provenance_data,
         }
 
 
@@ -185,6 +205,11 @@ def run_full_pipeline(
     case_id = input_path.name.replace(".nii.gz", "").replace(".nii", "")
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     timestamp_iso = datetime.now(timezone.utc).isoformat()
+    run_id = f"run_{uuid.uuid4().hex[:12]}"
+    t_total_start = time.perf_counter()
+
+    logger = get_pipeline_logger("pipeline", run_id=run_id, stage="init")
+    logger.info(f"Initialized multimodal pipeline for case_id='{case_id}', input='{input_path.name}'")
 
     # Determine destination directories
     base_out = Path(output_dir).resolve() if output_dir else project_root / "outputs"
@@ -199,6 +224,7 @@ def run_full_pipeline(
     ensure_directory(processed_dir)
 
     stage_statuses: Dict[str, str] = {}
+    stage_latencies_ms: Dict[str, float] = {}
     errors: Dict[str, str] = {}
 
     processed_input_path: Optional[Path] = None
@@ -215,9 +241,18 @@ def run_full_pipeline(
     report_data: Dict[str, Any] = {}
     viz_paths: Dict[str, Path] = {}
 
+    # Compute input cryptographic digest
+    try:
+        input_sha256 = compute_file_sha256(input_path)
+    except Exception as e:
+        input_sha256 = f"error: {e}"
+
     # -------------------------------------------------------------------------
     # Stage 1: Load NIfTI & Save Preprocessed Input (data/processed/)
     # -------------------------------------------------------------------------
+    t_stage = time.perf_counter()
+    logger.extra["stage"] = "preprocessing"
+    logger.info("Stage 1/6: Loading NIfTI & validating array dimensionality...")
     try:
         nii = nib.load(str(input_path))
         raw_arr = np.asanyarray(nii.dataobj)
@@ -238,12 +273,12 @@ def run_full_pipeline(
 
         # Extract 3D volume for visualizations and spatial features
         if raw_arr.ndim == 4:
-            # Detect 4-channel orientation: BraTS standard supports (H, W, D, 4) or (4, H, W, D)
+            # Detect 4-channel orientation: BraTS standard requires exactly 4 channels (T1, T1c, T2, FLAIR)
             # Standard BraTS order: [0: T1, 1: T1c, 2: T2, 3: FLAIR] -> display FLAIR (index 3)
             flair_idx = 3
-            if raw_arr.shape[-1] >= 4:
+            if raw_arr.shape[-1] == 4:
                 vol_3d = raw_arr[:, :, :, flair_idx].astype(np.float32)
-            elif raw_arr.shape[0] >= 4:
+            elif raw_arr.shape[0] == 4:
                 vol_3d = raw_arr[flair_idx, :, :, :].astype(np.float32)
             else:
                 raise ValueError(
@@ -273,15 +308,21 @@ def run_full_pipeline(
 
         validate_mri_volume(vol_3d)
         stage_statuses["preprocessing"] = "completed"
+        logger.info(f"Preprocessing completed successfully (3D shape: {vol_3d.shape})")
 
     except Exception as e:
         stage_statuses["preprocessing"] = "failed"
         errors["preprocessing"] = str(e)
-        print(f"[Pipeline] Preprocessing failed: {e}", file=sys.stderr)
+        logger.error(f"Preprocessing stage failed: {e}")
+
+    stage_latencies_ms["preprocessing"] = round((time.perf_counter() - t_stage) * 1000, 2)
 
     # -------------------------------------------------------------------------
     # Stage 2: MONAI BraTS Segmentation (outputs/masks/)
     # -------------------------------------------------------------------------
+    t_stage = time.perf_counter()
+    logger.extra["stage"] = "segmentation"
+    logger.info("Stage 2/6: Executing MONAI BraTS 3D tumor segmentation...")
     try:
         seg_inst = segmenter
         if seg_inst is None:
@@ -305,19 +346,25 @@ def run_full_pipeline(
 
         stage_statuses["segmentation"] = "completed"
         mask_source = "MONAI 3D SegResNet Model Prediction"
+        logger.info(f"Segmentation completed. Output mask saved to {mask_path.name}")
 
     except Exception as e:
         stage_statuses["segmentation"] = "failed"
         errors["segmentation"] = str(e)
-        print(f"[Pipeline] Segmentation stage failed: {e}", file=sys.stderr)
+        logger.error(f"Segmentation stage failed: {e}")
         # Never fabricate missing results
         mask_path = None
         mask_3d = None
         mask_source = "none"
 
+    stage_latencies_ms["segmentation"] = round((time.perf_counter() - t_stage) * 1000, 2)
+
     # -------------------------------------------------------------------------
     # Stage 3: Spatial Feature Extraction (outputs/reports/)
     # -------------------------------------------------------------------------
+    t_stage = time.perf_counter()
+    logger.extra["stage"] = "spatial_features"
+    logger.info("Stage 3/6: Extracting quantitative spatial features & lesion metrics...")
     try:
         if mask_3d is not None and vol_3d is not None:
             # Enforce spatial dimension consistency between volume and segmentation mask
@@ -357,17 +404,24 @@ def run_full_pipeline(
                 ref_comparison = {"status": "skipped", "reason": str(ref_e)}
 
             stage_statuses["spatial_features"] = "completed"
+            logger.info(f"Spatial analytics extracted: {spatial_dict.get('total_mask_voxels', 0)} lesion voxels")
         else:
             stage_statuses["spatial_features"] = "skipped (no mask generated)"
+            logger.warning("Spatial features skipped due to absent segmentation mask.")
 
     except Exception as e:
         stage_statuses["spatial_features"] = "failed"
         errors["spatial_features"] = str(e)
-        print(f"[Pipeline] Spatial feature extraction failed: {e}", file=sys.stderr)
+        logger.error(f"Spatial feature extraction failed: {e}")
+
+    stage_latencies_ms["spatial_features"] = round((time.perf_counter() - t_stage) * 1000, 2)
 
     # -------------------------------------------------------------------------
     # Stage 4: BrainGemma3D Draft Report Generation (outputs/reports/)
     # -------------------------------------------------------------------------
+    t_stage = time.perf_counter()
+    logger.extra["stage"] = "reporting"
+    logger.info("Stage 4/6: Generating BrainGemma3D vision-language draft report...")
     try:
         rep_inst = reporter
         if rep_inst is None:
@@ -393,13 +447,15 @@ def run_full_pipeline(
 
         if isinstance(report, DraftReport) and not report.is_model_available:
             stage_statuses["reporting"] = "model_unavailable"
+            logger.info("Reporting completed: BrainGemma3D model unavailable (transparent non-diagnostic fallback)")
         else:
             stage_statuses["reporting"] = "completed"
+            logger.info("BrainGemma3D report generated and verified against clinical safety policy")
 
     except Exception as e:
         stage_statuses["reporting"] = "failed"
         errors["reporting"] = str(e)
-        print(f"[Pipeline] BrainGemma3D reporting stage failed: {e}", file=sys.stderr)
+        logger.error(f"BrainGemma3D reporting stage failed: {e}")
         # Never fabricate a report when absent or failed
         report_data = {
             "status": "failed",
@@ -407,9 +463,14 @@ def run_full_pipeline(
             "disclaimer": RESEARCH_DISCLAIMER,
         }
 
+    stage_latencies_ms["reporting"] = round((time.perf_counter() - t_stage) * 1000, 2)
+
     # -------------------------------------------------------------------------
     # Stage 5: Visualization Generation (outputs/visualizations/)
     # -------------------------------------------------------------------------
+    t_stage = time.perf_counter()
+    logger.extra["stage"] = "visualization"
+    logger.info("Stage 5/6: Generating tri-planar, montage, and slice occupancy visualizations...")
     try:
         if vol_3d is not None:
             viz_prefix = f"{case_id}_{ts}"
@@ -420,19 +481,28 @@ def run_full_pipeline(
                 prefix=viz_prefix,
             )
             stage_statuses["visualization"] = "completed"
+            logger.info(f"Visualizations saved ({len(viz_paths)} figures created)")
         else:
             stage_statuses["visualization"] = "skipped (no volume loaded)"
+            logger.warning("Visualization stage skipped because 3D volume was not loaded.")
 
     except Exception as e:
         stage_statuses["visualization"] = "failed"
         errors["visualization"] = str(e)
-        print(f"[Pipeline] Visualization generation failed: {e}", file=sys.stderr)
+        logger.error(f"Visualization generation failed: {e}")
+
+    stage_latencies_ms["visualization"] = round((time.perf_counter() - t_stage) * 1000, 2)
 
     # -------------------------------------------------------------------------
     # Stage 6: Combined JSON Result (outputs/reports/)
     # -------------------------------------------------------------------------
+    t_stage = time.perf_counter()
+    logger.extra["stage"] = "packaging"
+    logger.info("Stage 6/6: Aggregating combined execution results...")
     # Determine overall status
-    if len(errors) == 0 and mask_path is not None:
+    if "preprocessing" in errors:
+        overall_status = "failed"
+    elif len(errors) == 0 and mask_path is not None:
         overall_status = "completed"
     elif mask_path is not None or len(viz_paths) > 0:
         overall_status = "partial_success"
@@ -444,6 +514,7 @@ def run_full_pipeline(
         combined_payload = {
             "system": "BrainMRI-SpatialVLM",
             "disclaimer": RESEARCH_DISCLAIMER,
+            "run_id": run_id,
             "case_id": case_id,
             "timestamp_utc": timestamp_iso,
             "overall_status": overall_status,
@@ -472,6 +543,96 @@ def run_full_pipeline(
     except Exception as e:
         stage_statuses["packaging"] = "failed"
         errors["packaging"] = str(e)
+        logger.error(f"Packaging failed: {e}")
+
+    stage_latencies_ms["packaging"] = round((time.perf_counter() - t_stage) * 1000, 2)
+
+    # -------------------------------------------------------------------------
+    # Stage 7: Run Provenance Manifest (outputs/reports/)
+    # -------------------------------------------------------------------------
+    t_stage = time.perf_counter()
+    logger.extra["stage"] = "provenance"
+    logger.info("Generating cryptographic Run Provenance Manifest...")
+
+    provenance_path: Optional[Path] = None
+    provenance_payload: Dict[str, Any] = {}
+    try:
+        # Determine PyTorch and CUDA runtime status
+        torch_mod = sys.modules.get("torch")
+        torch_ver = getattr(torch_mod, "__version__", "not_loaded") if torch_mod else "not_loaded"
+        cuda_avail = bool(torch_mod.cuda.is_available()) if torch_mod and hasattr(torch_mod, "cuda") else False
+        cuda_dev = (
+            torch_mod.cuda.get_device_name(0)
+            if cuda_avail and hasattr(torch_mod.cuda, "get_device_name")
+            else "none"
+        )
+
+        # Compute output file cryptographic SHA-256 digests
+        def safe_digest(p: Optional[Path]) -> Optional[str]:
+            if p is not None and p.is_file():
+                try:
+                    return compute_file_sha256(p)
+                except Exception:
+                    return None
+            return None
+
+        ref_mask_digest = safe_digest(Path(reference_mask_path).resolve()) if reference_mask_path else None
+
+        provenance_payload = {
+            "run_id": run_id,
+            "case_id": case_id,
+            "timestamp_utc": timestamp_iso,
+            "git_commit_sha": get_git_commit_sha(project_root) or "unversioned",
+            "system_environment": {
+                "python_version": sys.version.split()[0],
+                "platform": sys.platform,
+                "torch_version": torch_ver,
+                "cuda_available": cuda_avail,
+                "cuda_device_name": cuda_dev,
+            },
+            "inputs": {
+                "input_scan_path": str(input_path),
+                "input_scan_sha256": input_sha256,
+                "reference_mask_path": str(reference_mask_path) if reference_mask_path else None,
+                "reference_mask_sha256": ref_mask_digest,
+            },
+            "outputs": {
+                "mask_sha256": safe_digest(mask_path),
+                "processed_input_sha256": safe_digest(processed_input_path),
+                "spatial_features_sha256": safe_digest(spatial_features_path),
+                "draft_report_sha256": safe_digest(draft_report_path),
+                "draft_report_md_sha256": safe_digest(draft_report_md_path),
+                "combined_json_sha256": safe_digest(combined_json_path),
+            },
+            "stage_statuses": stage_statuses,
+            "safety_governance": {
+                "disclaimer": RESEARCH_DISCLAIMER,
+                "clinical_policy_audit": report_data.get("safety_policy_audit", {}),
+            },
+            "stage_latencies_ms": stage_latencies_ms,
+        }
+
+        stage_latencies_ms["provenance"] = round((time.perf_counter() - t_stage) * 1000, 2)
+        stage_latencies_ms["total_pipeline_latency_ms"] = round((time.perf_counter() - t_total_start) * 1000, 2)
+        provenance_payload["stage_latencies_ms"] = stage_latencies_ms
+
+        prov_fname = f"{case_id}_provenance_{ts}.json"
+        prov_path = reports_dir / safe_filename(prov_fname)
+        prov_path.write_text(json.dumps(provenance_payload, indent=2), encoding="utf-8")
+        provenance_path = prov_path
+        stage_statuses["provenance"] = "completed"
+        logger.info(f"Run provenance manifest saved to {prov_path.name}")
+
+    except Exception as e:
+        stage_statuses["provenance"] = "failed"
+        errors["provenance"] = str(e)
+        logger.error(f"Provenance generation failed: {e}")
+
+    logger.extra["stage"] = "done"
+    logger.info(
+        f"Pipeline run {run_id} finished with status '{overall_status}' "
+        f"in {stage_latencies_ms.get('total_pipeline_latency_ms', 0)} ms."
+    )
 
     # -------------------------------------------------------------------------
     # Return PipelineResult
@@ -488,11 +649,15 @@ def run_full_pipeline(
         draft_report_md_path=draft_report_md_path,
         visualization_paths=viz_paths,
         combined_json_path=combined_json_path,
+        provenance_path=provenance_path,
         spatial_features=spatial_dict,
         report_data=report_data,
         reference_comparison=ref_comparison,
+        provenance_data=provenance_payload,
         stage_statuses=stage_statuses,
         errors=errors,
+        stage_latencies_ms=stage_latencies_ms,
+        run_id=run_id,
         vol_3d=vol_3d,
         mask_3d=mask_3d,
         mask_source=mask_source,

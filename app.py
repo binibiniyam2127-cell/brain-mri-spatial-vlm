@@ -57,6 +57,7 @@ from src.app_helpers import (
 )
 from src.config import load_config
 from src.pipeline import PipelineResult, run_full_pipeline
+from src.reporting import ClinicalPolicyValidator
 from src.utils import get_project_root
 from src.visualization import find_informative_slices
 
@@ -325,6 +326,10 @@ def execute_pipeline(
     else:
         findings = raw_findings
         impression = raw_impression
+
+    # Clinical Safety Governance: Sanitize AI draft statements
+    findings, _ = ClinicalPolicyValidator.validate_and_sanitize(findings)
+    impression, _ = ClinicalPolicyValidator.validate_and_sanitize(impression)
 
     # 7. Initial 2D slice preview
     slice_info = find_informative_slices(vol_3d, mask_3d)

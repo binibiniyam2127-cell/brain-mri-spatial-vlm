@@ -86,12 +86,122 @@ def is_hf_authenticated() -> bool:
     return False
 
 
+class SafetyPolicyViolationError(ValueError):
+    """Raised when an AI text output contains forbidden clinical diagnostic assertions."""
+    pass
+
+
+class ClinicalPolicyValidator:
+    """Clinical Safety Policy Engine for non-diagnostic research governance.
+
+    Enforces strict research guardrails on AI-generated radiological text:
+    - Scans for definitive diagnostic assertions, ungrounded histological certainty,
+      and prescriptive clinical treatment commands.
+    - Quarantines and sanitizes violations into compliant non-diagnostic research phrasing.
+    - Audits reports for regulatory and governance compliance.
+    """
+
+    POLICY_VERSION = "1.0.0"
+
+    FORBIDDEN_DIAGNOSTIC_TERMS: Tuple[str, ...] = (
+        "definitive diagnosis",
+        "confirms glioblastoma",
+        "confirmed glioblastoma",
+        "patient has glioblastoma",
+        "biopsy is not needed",
+        "biopsy is unnecessary",
+        "patient must receive",
+        "prescribe",
+        "prescribed treatment",
+        "initiate chemotherapy",
+        "curative",
+        "proven malignancy",
+        "unequivocal cancer",
+        "pathognomonic",
+        "recommend surgical resection immediately",
+    )
+
+    SANIS_SUBSTITUTION = "[Clinical Claim Quarantined: Non-diagnostic research observation only]"
+
+    @classmethod
+    def scan_for_violations(cls, text: str) -> List[Dict[str, Any]]:
+        """Identify forbidden clinical assertions in text.
+
+        Args:
+            text: Text string to evaluate.
+
+        Returns:
+            List[Dict[str, Any]]: List of violation details.
+        """
+        if not text:
+            return []
+
+        violations: List[Dict[str, Any]] = []
+        import re
+        for term in cls.FORBIDDEN_DIAGNOSTIC_TERMS:
+            pattern = re.compile(rf"\b{re.escape(term)}\b", re.IGNORECASE)
+            for match in pattern.finditer(text):
+                violations.append({
+                    "term": term,
+                    "matched_text": match.group(0),
+                    "span": match.span(),
+                    "severity": "CRITICAL",
+                })
+        return violations
+
+    @classmethod
+    def sanitize(cls, text: str) -> Tuple[str, List[Dict[str, Any]]]:
+        """Sanitize text by quarantining forbidden diagnostic terms.
+
+        Args:
+            text: Raw input text.
+
+        Returns:
+            Tuple[str, List[Dict[str, Any]]]: Sanitized text and list of quarantined violations.
+        """
+        import re
+        violations = cls.scan_for_violations(text)
+        if not violations:
+            return text, []
+
+        sanitized = text
+        for term in cls.FORBIDDEN_DIAGNOSTIC_TERMS:
+            pattern = re.compile(rf"\b{re.escape(term)}\b", re.IGNORECASE)
+            sanitized = pattern.sub(cls.SANIS_SUBSTITUTION, sanitized)
+
+        return sanitized, violations
+
+    @classmethod
+    def validate_and_sanitize(cls, text: str) -> Tuple[str, Dict[str, Any]]:
+        """Validate and sanitize report text, returning structured audit metadata."""
+        sanitized_text, violations = cls.sanitize(text)
+        audit = {
+            "policy_version": cls.POLICY_VERSION,
+            "is_clean": len(violations) == 0,
+            "quarantined_count": len(violations),
+            "violations_detected": [v["term"] for v in violations],
+            "disclaimer_verified": RESEARCH_DISCLAIMER in sanitized_text,
+        }
+        return sanitized_text, audit
+
+    @classmethod
+    def assert_compliant(cls, text: str) -> None:
+        """Assert text is free of forbidden diagnostic terms, raising an error otherwise."""
+        violations = cls.scan_for_violations(text)
+        if violations:
+            terms = [v["term"] for v in violations]
+            raise SafetyPolicyViolationError(
+                f"Clinical Safety Policy violation detected: AI output contains forbidden terms: {terms}. "
+                f"All AI drafts must adhere to: '{RESEARCH_DISCLAIMER}'"
+            )
+
+
 class DraftReport(str):
     """Structured container for AI-generated research draft reports.
 
     Subclasses str so that it evaluates directly as a string (matching the exact
     unavailable message when models are absent) while also exposing structured
-    attributes, findings, impression, spatial context, and export methods.
+    attributes, findings, impression, spatial context, safety audit, and export methods.
     """
 
     findings: str
@@ -103,6 +213,7 @@ class DraftReport(str):
     metadata: Dict[str, Any]
     status: str
     timestamp_utc: str
+    safety_policy_audit: Dict[str, Any]
 
     def __new__(
         cls,
@@ -116,6 +227,7 @@ class DraftReport(str):
         metadata: Optional[Dict[str, Any]] = None,
         status: str = "draft",
         timestamp_utc: Optional[str] = None,
+        safety_policy_audit: Optional[Dict[str, Any]] = None,
     ) -> DraftReport:
         obj = super().__new__(cls, content)
         obj.findings = findings or content
@@ -127,6 +239,13 @@ class DraftReport(str):
         obj.metadata = dict(metadata or {})
         obj.status = status
         obj.timestamp_utc = timestamp_utc or datetime.now(timezone.utc).isoformat()
+        obj.safety_policy_audit = dict(safety_policy_audit or {
+            "policy_version": ClinicalPolicyValidator.POLICY_VERSION,
+            "is_clean": True,
+            "quarantined_count": 0,
+            "violations_detected": [],
+            "disclaimer_verified": True,
+        })
         return obj
 
     def to_dict(self) -> Dict[str, Any]:
@@ -140,6 +259,7 @@ class DraftReport(str):
             "findings": self.findings,
             "impression": self.impression,
             "spatial_context": self.spatial_context,
+            "safety_policy_audit": self.safety_policy_audit,
             "metadata": self.metadata,
             "report_text": str(self),
         }
@@ -444,20 +564,45 @@ class BrainGemma3DReporter:
         if self.mock_generator is not None:
             report = self.mock_generator(vol_3d, mask_3d, spatial_dict)
             if isinstance(report, DraftReport):
-                return report
+                clean_findings, f_audit = ClinicalPolicyValidator.validate_and_sanitize(report.findings)
+                clean_impression, i_audit = ClinicalPolicyValidator.validate_and_sanitize(report.impression)
+                clean_content, _ = ClinicalPolicyValidator.validate_and_sanitize(str(report))
+                violations = list(set(f_audit["violations_detected"] + i_audit["violations_detected"]))
+                audit = {
+                    "policy_version": ClinicalPolicyValidator.POLICY_VERSION,
+                    "is_clean": len(violations) == 0,
+                    "quarantined_count": f_audit["quarantined_count"] + i_audit["quarantined_count"],
+                    "violations_detected": violations,
+                    "disclaimer_verified": RESEARCH_DISCLAIMER in clean_content,
+                }
+                return DraftReport(
+                    content=clean_content,
+                    findings=clean_findings,
+                    impression=clean_impression,
+                    disclaimer=report.disclaimer,
+                    is_model_available=report.is_model_available,
+                    missing_components=report.missing_components,
+                    spatial_context=report.spatial_context,
+                    metadata=report.metadata,
+                    status=report.status,
+                    timestamp_utc=report.timestamp_utc,
+                    safety_policy_audit=audit,
+                )
             # Wrap string result
             report_str = str(report)
-            if RESEARCH_DISCLAIMER not in report_str:
-                report_str = f"> **DISCLAIMER: {RESEARCH_DISCLAIMER}**\n\n{report_str}"
+            clean_str, audit = ClinicalPolicyValidator.validate_and_sanitize(report_str)
+            if RESEARCH_DISCLAIMER not in clean_str:
+                clean_str = f"> **DISCLAIMER: {RESEARCH_DISCLAIMER}**\n\n{clean_str}"
             return DraftReport(
-                content=report_str,
-                findings=report_str,
+                content=clean_str,
+                findings=clean_str,
                 impression=f"Mocked impression. {RESEARCH_DISCLAIMER}",
                 disclaimer=RESEARCH_DISCLAIMER,
                 is_model_available=True,
                 spatial_context=spatial_dict,
                 metadata=metadata,
                 status="completed",
+                safety_policy_audit=audit,
             )
 
         # Check availability of local model assets, dependencies, GPU, and licenses
@@ -522,6 +667,17 @@ class BrainGemma3DReporter:
                 f"Automated draft inference completed. Non-clinical evaluation."
             )
 
+        clean_findings, f_audit = ClinicalPolicyValidator.validate_and_sanitize(findings_draft)
+        clean_impression, i_audit = ClinicalPolicyValidator.validate_and_sanitize(impression_draft)
+        violations = list(set(f_audit["violations_detected"] + i_audit["violations_detected"]))
+        combined_audit = {
+            "policy_version": ClinicalPolicyValidator.POLICY_VERSION,
+            "is_clean": len(violations) == 0,
+            "quarantined_count": f_audit["quarantined_count"] + i_audit["quarantined_count"],
+            "violations_detected": violations,
+            "disclaimer_verified": True,
+        }
+
         full_content = (
             f"# BrainGemma3D Draft Radiology Report\n\n"
             f"> **DISCLAIMER: {RESEARCH_DISCLAIMER}**\n\n"
@@ -529,21 +685,22 @@ class BrainGemma3DReporter:
             f"3D Brain Magnetic Resonance Imaging (MRI) volumetric evaluation.\n"
             f"*Research draft only — {RESEARCH_DISCLAIMER}*\n\n"
             f"## FINDINGS\n"
-            f"{findings_draft}\n\n"
+            f"{clean_findings}\n\n"
             f"## IMPRESSION\n"
-            f"{impression_draft}\n"
+            f"{clean_impression}\n"
         )
 
         return DraftReport(
             content=full_content,
-            findings=findings_draft,
-            impression=impression_draft,
+            findings=clean_findings,
+            impression=clean_impression,
             disclaimer=RESEARCH_DISCLAIMER,
             is_model_available=True,
             missing_components=[],
             spatial_context=spatial_dict,
             metadata=metadata,
             status="completed",
+            safety_policy_audit=combined_audit,
         )
 
     def save_report(
