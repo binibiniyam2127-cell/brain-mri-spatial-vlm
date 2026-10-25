@@ -643,7 +643,7 @@ def create_gradio_app() -> gr.Blocks:
             # TAB 1: 3D Volumetric Mesh Viewer
             with gr.TabItem("🌐 Interactive 3D Volumetric Model"):
                 gr.Markdown("#### Orbit, zoom, and rotate the 3D Brain & Lesion surface meshes in 360° WebGL:")
-                plot_3d = gr.Plot(label="3D WebGL Surface Model with Bounding Box")
+                plot_3d = gr.Plot(show_label=False)
 
             # TAB 2: Multi-Planar 2D Slice Explorer
             with gr.TabItem("👁️ Multi-Planar 2D Slice Viewer (MPR)"):

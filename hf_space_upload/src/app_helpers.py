@@ -521,12 +521,6 @@ def build_3d_volumetric_figure(
     fig = go.Figure(data=traces)
 
     fig.update_layout(
-        title=dict(
-            text="Interactive 3D Brain & Lesion Volumetric Surface Model",
-            font=dict(color="#ffffff", size=14),
-            x=0.05,
-            y=0.96,
-        ),
         paper_bgcolor="#0e1117",
         plot_bgcolor="#0e1117",
         scene=dict(
@@ -549,7 +543,7 @@ def build_3d_volumetric_figure(
             x=0.5,
             bgcolor="rgba(20, 20, 20, 0.7)",
         ),
-        margin=dict(l=0, r=0, t=30, b=10),
+        margin=dict(l=0, r=0, t=10, b=10),
     )
 
     return fig
