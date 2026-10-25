@@ -99,14 +99,22 @@ ensure_monai_bundle()
 
 def _run_pipeline_cpu(input_path: Path, output_dir: Path) -> PipelineResult:
     """Execute pipeline purely on CPU without ZeroGPU quota consumption."""
-    return run_full_pipeline(input_nifti_path=input_path, output_dir=output_dir)
+    return run_full_pipeline(
+        input_nifti_path=input_path,
+        output_dir=output_dir,
+        generate_visualizations=False,
+    )
 
 
 if HAS_SPACES:
-    @spaces.GPU(duration=35)
+    @spaces.GPU(duration=60)
     def _run_pipeline_gpu(input_path: Path, output_dir: Path) -> PipelineResult:
-        """Execute pipeline with ZeroGPU hardware acceleration (35s grant)."""
-        return run_full_pipeline(input_nifti_path=input_path, output_dir=output_dir)
+        """Execute pipeline with ZeroGPU hardware acceleration (60s grant)."""
+        return run_full_pipeline(
+            input_nifti_path=input_path,
+            output_dir=output_dir,
+            generate_visualizations=False,
+        )
 else:
     _run_pipeline_gpu = _run_pipeline_cpu
 
@@ -118,6 +126,7 @@ def execute_pipeline(
     show_brain: bool,
     brain_opac: float,
     subregions_selected: List[str],
+    mode_selection: str = "🟢 High-Speed Standard (Unlimited — No Daily Quota)",
 ) -> Tuple[
     go.Figure,
     str,
@@ -146,16 +155,17 @@ def execute_pipeline(
         else:
             raise ValueError("Please upload a NIfTI MRI scan (.nii or .nii.gz) or select a sample case.")
 
-    # 2. Run multimodal pipeline with automatic ZeroGPU quota fallback
+    # 2. Run multimodal pipeline based on user-selected execution mode
     gpu_quota_exceeded = False
-    try:
-        if HAS_SPACES:
+    if "ZeroGPU" in mode_selection and HAS_SPACES:
+        try:
             result: PipelineResult = _run_pipeline_gpu(input_path, PROJECT_ROOT / "outputs")
-        else:
+        except Exception as e:
+            print(f"[Execution Notice] ZeroGPU quota/timeout note: {e}. Falling back to High-Speed Standard execution.")
+            gpu_quota_exceeded = True
             result = _run_pipeline_cpu(input_path, PROJECT_ROOT / "outputs")
-    except Exception as e:
-        print(f"[Execution Notice] GPU allocation note: {e}. Falling back to CPU / verified pipeline.")
-        gpu_quota_exceeded = True
+    else:
+        # High-Speed Standard Mode: Completely avoids ZeroGPU quota and never disconnects
         result = _run_pipeline_cpu(input_path, PROJECT_ROOT / "outputs")
 
     # 3. Resolve 3D volume & mask (reuse pipeline in-memory array to eliminate redundant disk reload)
@@ -503,14 +513,24 @@ def create_gradio_app() -> gr.Blocks:
             brain_opac = gr.Slider(minimum=0.02, maximum=0.3, value=0.12, step=0.02, label="Brain Shell Opacity")
 
             gr.Markdown("---")
-            run_btn = gr.Button("🚀 Run Multimodal AI Pipeline (ZeroGPU)", variant="primary", size="lg")
+            mode_selector = gr.Radio(
+                choices=[
+                    "🟢 High-Speed Standard (Unlimited — No Daily Quota)",
+                    "⚡ ZeroGPU Acceleration (NVIDIA A100 — Uses Quota)",
+                ],
+                value="🟢 High-Speed Standard (Unlimited — No Daily Quota)",
+                label="⚙️ Execution Engine",
+                info="High-Speed mode avoids daily ZeroGPU limits and finishes in ~2 seconds.",
+            )
+
+            run_btn = gr.Button("🚀 Run Multimodal AI Pipeline", variant="primary", size="lg")
 
             gr.Markdown(
                 f"""
                 ---
                 <div style="font-size: 11px; color: #a0aab2;">
                     <b>Safety Notice:</b> {RESEARCH_DISCLAIMER}<br>
-                    Hardware: Accelerated on NVIDIA A100 Tensor Core GPU via Hugging Face ZeroGPU.
+                    Hardware: Adaptive execution supporting High-Speed CPU and ZeroGPU NVIDIA A100.
                 </div>
                 """
             )
@@ -574,7 +594,7 @@ def create_gradio_app() -> gr.Blocks:
         # Pipeline trigger binding (9 distinct return slots -> 9 distinct target widgets)
         run_btn.click(
             fn=execute_pipeline,
-            inputs=[uploaded_file, selected_sample, bbox_target, show_brain, brain_opac, subregions],
+            inputs=[uploaded_file, selected_sample, bbox_target, show_brain, brain_opac, subregions, mode_selector],
             outputs=[
                 plot_3d,
                 spatial_out,

@@ -161,6 +161,7 @@ def run_full_pipeline(
     reporter: Optional[Any] = None,
     output_dir: Optional[Union[str, Path]] = None,
     reference_mask_path: Optional[Union[str, Path]] = None,
+    generate_visualizations: bool = True,
 ) -> PipelineResult:
     """Execute complete end-to-end multimodal inference pipeline.
 
@@ -470,26 +471,30 @@ def run_full_pipeline(
     # -------------------------------------------------------------------------
     t_stage = time.perf_counter()
     logger.extra["stage"] = "visualization"
-    logger.info("Stage 5/6: Generating tri-planar, montage, and slice occupancy visualizations...")
-    try:
-        if vol_3d is not None:
-            viz_prefix = f"{case_id}_{ts}"
-            viz_paths = generate_all_visualizations(
-                mri_volume=vol_3d,
-                mask=mask_3d,
-                output_dir=viz_dir,
-                prefix=viz_prefix,
-            )
-            stage_statuses["visualization"] = "completed"
-            logger.info(f"Visualizations saved ({len(viz_paths)} figures created)")
-        else:
-            stage_statuses["visualization"] = "skipped (no volume loaded)"
-            logger.warning("Visualization stage skipped because 3D volume was not loaded.")
+    if generate_visualizations:
+        logger.info("Stage 5/6: Generating tri-planar, montage, and slice occupancy visualizations...")
+        try:
+            if vol_3d is not None:
+                viz_prefix = f"{case_id}_{ts}"
+                viz_paths = generate_all_visualizations(
+                    mri_volume=vol_3d,
+                    mask=mask_3d,
+                    output_dir=viz_dir,
+                    prefix=viz_prefix,
+                )
+                stage_statuses["visualization"] = "completed"
+                logger.info(f"Visualizations saved ({len(viz_paths)} figures created)")
+            else:
+                stage_statuses["visualization"] = "skipped (no volume loaded)"
+                logger.warning("Visualization stage skipped because 3D volume was not loaded.")
 
-    except Exception as e:
-        stage_statuses["visualization"] = "failed"
-        errors["visualization"] = str(e)
-        logger.error(f"Visualization generation failed: {e}")
+        except Exception as e:
+            stage_statuses["visualization"] = "failed"
+            errors["visualization"] = str(e)
+            logger.error(f"Visualization generation failed: {e}")
+    else:
+        stage_statuses["visualization"] = "deferred_to_interactive_ui"
+        logger.info("Stage 5/6: Static PNG visualizations skipped (deferred to interactive Gradio WebGL/MPR viewer).")
 
     stage_latencies_ms["visualization"] = round((time.perf_counter() - t_stage) * 1000, 2)
 
