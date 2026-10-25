@@ -366,9 +366,11 @@ def execute_pipeline(
     findings, _ = ClinicalPolicyValidator.validate_and_sanitize(findings)
     impression, _ = ClinicalPolicyValidator.validate_and_sanitize(impression)
 
-    # 7. Initial 2D slice preview
+    # 7. Initial 2D slice preview (Default: Axial peak lesion slice)
     slice_info = find_informative_slices(vol_3d, mask_3d)
-    default_slice_idx = slice_info["axial"]["max_mask_slice"]
+    plane_data = slice_info["axial"]
+    default_slice_idx = int(plane_data["max_mask_slice"])
+    axial_range = plane_data.get("active_range", (0, vol_3d.shape[2] - 1))
     max_slice = vol_3d.shape[2] - 1
 
     initial_slice_img = render_slice_rgba(
@@ -381,7 +383,23 @@ def execute_pipeline(
         show_bbox=True,
     )
 
-    slider_update = gr.Slider(value=default_slice_idx, maximum=max_slice)
+    has_mask = mask_3d is not None and np.any(mask_3d > 0)
+    if has_mask:
+        initial_info = (
+            f"🎯 **Axial (Z-axis) Auto-Centered:** Peak lesion area at slice **#{default_slice_idx}** "
+            f"(Lesion visible across slices **{axial_range[0]} to {axial_range[1]}**)."
+        )
+    else:
+        initial_info = f"ℹ️ Center anatomical slice: **#{default_slice_idx}** (Range 0 - {max_slice})."
+
+    slider_update = gr.Slider(
+        minimum=0,
+        maximum=max_slice,
+        value=default_slice_idx,
+        step=1,
+        label=f"Axial Slice Index (0 - {max_slice})",
+        interactive=True,
+    )
 
     return (
         fig_3d,
@@ -393,6 +411,8 @@ def execute_pipeline(
         mask_3d,
         slider_update,
         initial_slice_img,
+        initial_info,
+        gr.Radio(value="Axial (Z-axis)"),
     )
 
 
@@ -400,15 +420,14 @@ def update_2d_slice(
     vol_3d: Any,
     mask_3d: Any,
     plane_selection: str,
-    slice_idx: int,
+    slice_idx: Optional[int],
     show_mask: bool,
     opacity: float,
     show_bbox: bool,
-) -> Image.Image:
+) -> Tuple[Image.Image, str]:
     """Render 2D slice dynamically as the user scrubs the slider."""
     if vol_3d is None:
-        # Return blank placeholder image
-        return Image.fromarray(np.zeros((240, 240, 3), dtype=np.uint8))
+        return Image.fromarray(np.zeros((240, 240, 3), dtype=np.uint8)), "ℹ️ *Please run the multimodal pipeline first.*"
 
     plane_map = {
         "Axial (Z-axis)": "axial",
@@ -419,9 +438,12 @@ def update_2d_slice(
 
     axis_map = {"axial": 2, "coronal": 1, "sagittal": 0}
     max_idx = vol_3d.shape[axis_map[plane]] - 1
-    clamped_idx = max(0, min(int(slice_idx), max_idx))
+    if slice_idx is None:
+        clamped_idx = max_idx // 2
+    else:
+        clamped_idx = max(0, min(int(slice_idx), max_idx))
 
-    return render_slice_rgba(
+    img = render_slice_rgba(
         mri_volume=vol_3d,
         mask=mask_3d,
         plane=plane,
@@ -430,6 +452,85 @@ def update_2d_slice(
         alpha=opacity,
         show_bbox=show_bbox,
     )
+
+    has_mask = mask_3d is not None and np.any(mask_3d > 0)
+    if has_mask:
+        slice_info = find_informative_slices(vol_3d, mask_3d)
+        plane_data = slice_info[plane]
+        peak = int(plane_data["max_mask_slice"])
+        active_range = plane_data.get("active_range", (0, max_idx))
+        in_lesion = active_range[0] <= clamped_idx <= active_range[1]
+        status = "🔴 Inside Lesion" if in_lesion else "⚪ Outside Lesion"
+        info_text = (
+            f"📍 **{plane_selection.split(' ')[0]} Slice #{clamped_idx}** / {max_idx} [{status}] | "
+            f"Active Lesion Range: **slices {active_range[0]} - {active_range[1]}** (Peak Lesion Area at **#{peak}**)"
+        )
+    else:
+        info_text = f"📍 **{plane_selection.split(' ')[0]} Slice #{clamped_idx}** / {max_idx}"
+
+    return img, info_text
+
+
+def on_plane_change(
+    vol_3d: Any,
+    mask_3d: Any,
+    plane_selection: str,
+    show_mask: bool,
+    opacity: float,
+    show_bbox: bool,
+) -> Tuple[Any, Image.Image, str]:
+    """Auto-adjust slider range and automatically center on the peak tumor slice when plane changes."""
+    if vol_3d is None:
+        placeholder = Image.fromarray(np.zeros((240, 240, 3), dtype=np.uint8))
+        return (
+            gr.Slider(minimum=0, maximum=154, value=75, label="Slice Index (0 - 154)"),
+            placeholder,
+            "ℹ️ *Run the pipeline first to explore slices.*",
+        )
+
+    plane_map = {
+        "Axial (Z-axis)": "axial",
+        "Coronal (Y-axis)": "coronal",
+        "Sagittal (X-axis)": "sagittal",
+    }
+    plane = plane_map.get(plane_selection, "axial")
+    axis_map = {"axial": 2, "coronal": 1, "sagittal": 0}
+    max_idx = vol_3d.shape[axis_map[plane]] - 1
+
+    slice_info = find_informative_slices(vol_3d, mask_3d)
+    plane_data = slice_info[plane]
+    best_slice = int(plane_data["max_mask_slice"])
+    active_range = plane_data.get("active_range", (0, max_idx))
+
+    img = render_slice_rgba(
+        mri_volume=vol_3d,
+        mask=mask_3d,
+        plane=plane,
+        slice_idx=best_slice,
+        show_mask=show_mask,
+        alpha=opacity,
+        show_bbox=show_bbox,
+    )
+
+    has_mask = mask_3d is not None and np.any(mask_3d > 0)
+    if has_mask:
+        info_text = (
+            f"🎯 **{plane_selection.split(' ')[0]} Auto-Centered:** Peak lesion area at slice **#{best_slice}** "
+            f"(Lesion visible across slices **{active_range[0]} to {active_range[1]}**)."
+        )
+    else:
+        info_text = f"ℹ️ Center anatomical slice: **#{best_slice}** (Range 0 - {max_idx})."
+
+    slider_update = gr.Slider(
+        minimum=0,
+        maximum=max_idx,
+        value=best_slice,
+        step=1,
+        label=f"{plane_selection.split(' ')[0]} Slice Index (0 - {max_idx})",
+        interactive=True,
+    )
+
+    return slider_update, img, info_text
 
 
 def create_gradio_app() -> gr.Blocks:
@@ -552,15 +653,20 @@ def create_gradio_app() -> gr.Blocks:
                         choices=["Axial (Z-axis)", "Coronal (Y-axis)", "Sagittal (X-axis)"],
                         value="Axial (Z-axis)",
                         label="Anatomical Plane",
+                        scale=3,
                     )
-                    slice_slider = gr.Slider(
-                        minimum=0,
-                        maximum=154,
-                        value=75,
-                        step=1,
-                        label="Slice Index",
-                        interactive=True,
-                    )
+                    center_btn = gr.Button("🎯 Center on Peak Lesion Slice", variant="secondary", scale=1)
+
+                slice_slider = gr.Slider(
+                    minimum=0,
+                    maximum=154,
+                    value=75,
+                    step=1,
+                    label="Axial Slice Index (0 - 154)",
+                    interactive=True,
+                )
+                slice_info_md = gr.Markdown("ℹ️ *Awaiting pipeline run to display lesion slice range.*")
+
                 with gr.Row():
                     mask_checkbox = gr.Checkbox(value=True, label="Show Mask Overlay")
                     bbox_checkbox = gr.Checkbox(value=True, label="Show 2D Bounding Box")
@@ -591,7 +697,7 @@ def create_gradio_app() -> gr.Blocks:
             with gr.TabItem("📥 Download Artifacts"):
                 mask_download = gr.File(label="Download Predicted 3D Segmentation Mask (.nii.gz)")
 
-        # Pipeline trigger binding (9 distinct return slots -> 9 distinct target widgets)
+        # Pipeline trigger binding (11 distinct return slots -> 11 distinct target widgets)
         run_btn.click(
             fn=execute_pipeline,
             inputs=[uploaded_file, selected_sample, bbox_target, show_brain, brain_opac, subregions, mode_selector],
@@ -605,16 +711,24 @@ def create_gradio_app() -> gr.Blocks:
                 mask_state,
                 slice_slider,
                 slice_image,
+                slice_info_md,
+                plane_radio,
             ],
         )
 
         # Slice scrubbing trigger binding
         slice_inputs = [vol_state, mask_state, plane_radio, slice_slider, mask_checkbox, opacity_slider, bbox_checkbox]
-        slice_slider.change(fn=update_2d_slice, inputs=slice_inputs, outputs=slice_image)
-        plane_radio.change(fn=update_2d_slice, inputs=slice_inputs, outputs=slice_image)
-        mask_checkbox.change(fn=update_2d_slice, inputs=slice_inputs, outputs=slice_image)
-        bbox_checkbox.change(fn=update_2d_slice, inputs=slice_inputs, outputs=slice_image)
-        opacity_slider.change(fn=update_2d_slice, inputs=slice_inputs, outputs=slice_image)
+        slice_slider.change(fn=update_2d_slice, inputs=slice_inputs, outputs=[slice_image, slice_info_md])
+
+        # Plane switching & Auto-centering trigger bindings
+        plane_inputs = [vol_state, mask_state, plane_radio, mask_checkbox, opacity_slider, bbox_checkbox]
+        plane_radio.change(fn=on_plane_change, inputs=plane_inputs, outputs=[slice_slider, slice_image, slice_info_md])
+        center_btn.click(fn=on_plane_change, inputs=plane_inputs, outputs=[slice_slider, slice_image, slice_info_md])
+
+        # Checkbox & Opacity updates
+        mask_checkbox.change(fn=update_2d_slice, inputs=slice_inputs, outputs=[slice_image, slice_info_md])
+        bbox_checkbox.change(fn=update_2d_slice, inputs=slice_inputs, outputs=[slice_image, slice_info_md])
+        opacity_slider.change(fn=update_2d_slice, inputs=slice_inputs, outputs=[slice_image, slice_info_md])
 
     return demo
 
