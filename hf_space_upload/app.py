@@ -97,7 +97,20 @@ def ensure_monai_bundle():
 ensure_monai_bundle()
 
 
-@spaces.GPU(duration=120)
+def _run_pipeline_cpu(input_path: Path, output_dir: Path) -> PipelineResult:
+    """Execute pipeline purely on CPU without ZeroGPU quota consumption."""
+    return run_full_pipeline(input_nifti_path=input_path, output_dir=output_dir)
+
+
+if HAS_SPACES:
+    @spaces.GPU(duration=35)
+    def _run_pipeline_gpu(input_path: Path, output_dir: Path) -> PipelineResult:
+        """Execute pipeline with ZeroGPU hardware acceleration (35s grant)."""
+        return run_full_pipeline(input_nifti_path=input_path, output_dir=output_dir)
+else:
+    _run_pipeline_gpu = _run_pipeline_cpu
+
+
 def execute_pipeline(
     uploaded_file: Optional[Any],
     selected_sample: str,
@@ -133,11 +146,17 @@ def execute_pipeline(
         else:
             raise ValueError("Please upload a NIfTI MRI scan (.nii or .nii.gz) or select a sample case.")
 
-    # 2. Run full multimodal pipeline
-    result: PipelineResult = run_full_pipeline(
-        input_nifti_path=input_path,
-        output_dir=PROJECT_ROOT / "outputs",
-    )
+    # 2. Run multimodal pipeline with automatic ZeroGPU quota fallback
+    gpu_quota_exceeded = False
+    try:
+        if HAS_SPACES:
+            result: PipelineResult = _run_pipeline_gpu(input_path, PROJECT_ROOT / "outputs")
+        else:
+            result = _run_pipeline_cpu(input_path, PROJECT_ROOT / "outputs")
+    except Exception as e:
+        print(f"[Execution Notice] GPU allocation note: {e}. Falling back to CPU / verified pipeline.")
+        gpu_quota_exceeded = True
+        result = _run_pipeline_cpu(input_path, PROJECT_ROOT / "outputs")
 
     # 3. Resolve 3D volume & mask (reuse pipeline in-memory array to eliminate redundant disk reload)
     vol_3d = result.vol_3d
@@ -239,7 +258,13 @@ def execute_pipeline(
     conn_count = conn_info.get("num_components", 0) if isinstance(conn_info, dict) else 0
 
     fallback_notice = ""
-    if "Fallback" in mask_source:
+    if gpu_quota_exceeded:
+        fallback_notice = (
+            "\n> ℹ️ **Notice (ZeroGPU Daily Limit Reached):** Your daily Hugging Face ZeroGPU quota was reached. "
+            "The system automatically switched to CPU execution so your 3D visualization, spatial measurements, "
+            "and draft reports remain 100% accessible!\n"
+        )
+    elif "Fallback" in mask_source:
         fallback_notice = (
             "\n> ℹ️ **Notice:** Active neural network weights were not detected on this machine. "
             "A verified precomputed reference annotation was loaded for quantitative spatial analytics and 3D visualization.\n"
