@@ -97,10 +97,21 @@ def ensure_monai_bundle():
 ensure_monai_bundle()
 
 
+_CACHED_SEG_CPU = None
+
+
+def get_cpu_segmenter():
+    """Cache CPU segmenter model in memory to eliminate repeated disk reloads."""
+    global _CACHED_SEG_CPU
+    if _CACHED_SEG_CPU is None:
+        from src.segmentation import BraTSSegmenter
+        _CACHED_SEG_CPU = BraTSSegmenter(device="cpu")
+    return _CACHED_SEG_CPU
+
+
 def _run_pipeline_cpu(input_path: Path, output_dir: Path) -> PipelineResult:
     """Execute pipeline purely on CPU without ZeroGPU quota consumption."""
-    from src.segmentation import BraTSSegmenter
-    seg = BraTSSegmenter(device="cpu")
+    seg = get_cpu_segmenter()
     return run_full_pipeline(
         input_nifti_path=input_path,
         segmenter=seg,
