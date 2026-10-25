@@ -99,8 +99,11 @@ ensure_monai_bundle()
 
 def _run_pipeline_cpu(input_path: Path, output_dir: Path) -> PipelineResult:
     """Execute pipeline purely on CPU without ZeroGPU quota consumption."""
+    from src.segmentation import BraTSSegmenter
+    seg = BraTSSegmenter(device="cpu")
     return run_full_pipeline(
         input_nifti_path=input_path,
+        segmenter=seg,
         output_dir=output_dir,
         generate_visualizations=False,
     )
@@ -110,8 +113,11 @@ if HAS_SPACES:
     @spaces.GPU(duration=60)
     def _run_pipeline_gpu(input_path: Path, output_dir: Path) -> PipelineResult:
         """Execute pipeline with ZeroGPU hardware acceleration (60s grant)."""
+        from src.segmentation import BraTSSegmenter
+        seg = BraTSSegmenter(device="cuda")
         return run_full_pipeline(
             input_nifti_path=input_path,
+            segmenter=seg,
             output_dir=output_dir,
             generate_visualizations=False,
         )
@@ -169,9 +175,15 @@ def execute_pipeline(
         result = _run_pipeline_cpu(input_path, PROJECT_ROOT / "outputs")
 
     # 3. Resolve 3D volume & mask (reuse pipeline in-memory array to eliminate redundant disk reload)
+    mri_nii = None
+    if input_path.is_file():
+        try:
+            mri_nii = nib.load(str(input_path))
+        except Exception as e:
+            print(f"[Warning] Could not load NIfTI header: {e}")
+
     vol_3d = result.vol_3d
-    if vol_3d is None:
-        mri_nii = nib.load(str(input_path))
+    if vol_3d is None and mri_nii is not None:
         mri_vol = np.asanyarray(mri_nii.dataobj).astype(np.float32)
         vol_3d = mri_vol[..., 0] if mri_vol.ndim == 4 else mri_vol
 
@@ -224,15 +236,16 @@ def execute_pipeline(
 
     # Ensure spatial features are calculated from the active mask
     spatial_dict = result.spatial_features or {}
-    if mask_3d is not None and (not spatial_dict or spatial_dict.get("total_mask_voxels", 0) == 0):
+    if mask_3d is not None and np.any(mask_3d > 0) and (not spatial_dict or spatial_dict.get("total_mask_voxels", 0) == 0):
         try:
             from src.spatial_features import extract_spatial_features
-            zooms = mri_nii.header.get_zooms()[:3] if hasattr(mri_nii, "header") else (1.0, 1.0, 1.0)
+            zooms = mri_nii.header.get_zooms()[:3] if (mri_nii is not None and hasattr(mri_nii, "header")) else (1.0, 1.0, 1.0)
+            affine = mri_nii.affine if (mri_nii is not None and hasattr(mri_nii, "affine")) else None
             metrics = extract_spatial_features(
                 mri_volume=vol_3d,
                 segmentation_mask=mask_3d,
                 voxel_spacing_mm=zooms,
-                affine=mri_nii.affine if hasattr(mri_nii, "affine") else None,
+                affine=affine,
             )
             spatial_dict = metrics.to_dict()
         except Exception as e:
